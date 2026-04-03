@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useAppStore } from '../store'
 import { generateMonthlyPdf } from '../utils/pdf'
 import { requestTimestamp, computePdfHash } from '../utils/timestamp'
+import { renderMonthlySocChart, renderMonthlyEvChart } from '../utils/chartExport'
 
 type ExportState = 'idle' | 'generating' | 'timestamping' | 'done' | 'error'
 
@@ -31,6 +32,10 @@ export function ExportPanel() {
     setTsrReady(false)
 
     try {
+      // Render charts offscreen
+      const socChartImage = renderMonthlySocChart(days, simulationResults, selectedMonth)
+      const evChartImage = renderMonthlyEvChart(days, selectedMonth)
+
       // Generate PDF
       const pdfBuffer = generateMonthlyPdf({
         month: selectedMonth,
@@ -39,6 +44,8 @@ export function ExportPanel() {
         simResults: simulationResults,
         params: simulationParams,
         fileMetadata,
+        socChartImage,
+        evChartImage,
       })
 
       const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
