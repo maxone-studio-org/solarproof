@@ -8,7 +8,7 @@ interface PdfExportOptions {
   days: DayData[]
   simResults: DaySimulation[]
   params: SimulationParams
-  fileMetadata: FileMetadata
+  fileMetadataList: FileMetadata[]
   socChartImage?: string // base64 data URL
   evChartImage?: string  // base64 data URL
 }
@@ -35,7 +35,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
-  const { month, anlagenname, days, simResults, params, fileMetadata, socChartImage, evChartImage } = options
+  const { month, anlagenname, days, simResults, params, fileMetadataList, socChartImage, evChartImage } = options
 
   const [yearStr, monthStr] = month.split('-')
   const monthName = MONTHS[parseInt(monthStr) - 1]
@@ -83,23 +83,32 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
   // Quelldatei-Informationen
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text('Quelldatei', margin, y)
+  doc.text(fileMetadataList.length === 1 ? 'Quelldatei' : `Quelldateien (${fileMetadataList.length})`, margin, y)
   y += 7
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
 
-  addField('Dateiname:', fileMetadata.name)
-  addField('Dateigröße:', formatBytes(fileMetadata.size))
-  addField('Import:', formatDateTime(fileMetadata.importTimestamp))
+  for (const fileMeta of fileMetadataList) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    addField('Dateiname:', fileMeta.name)
+    addField('Dateigröße:', formatBytes(fileMeta.size))
+    addField('Import:', formatDateTime(fileMeta.importTimestamp))
 
-  doc.setFont('helvetica', 'bold')
-  doc.text('SHA-256:', margin, y)
-  doc.setFont('courier', 'normal')
-  doc.setFontSize(8)
-  doc.text(fileMetadata.sha256, margin + 55, y)
-  doc.setFontSize(10)
-  doc.setFont('helvetica', 'normal')
-  y += 12
+    doc.setFont('helvetica', 'bold')
+    doc.text('SHA-256:', margin, y)
+    doc.setFont('courier', 'normal')
+    doc.setFontSize(8)
+    doc.text(fileMeta.sha256, margin + 55, y)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    y += 8
+
+    if (fileMetadataList.length > 1) {
+      doc.setDrawColor(230, 230, 230)
+      doc.line(margin + 10, y - 2, pageWidth - margin - 10, y - 2)
+      y += 2
+    }
+  }
+  y += 4
 
   // Engine-Version
   doc.setFontSize(11)

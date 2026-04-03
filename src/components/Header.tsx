@@ -1,8 +1,11 @@
 import { useAppStore } from '../store'
 
 export function Header() {
-  const fileMetadata = useAppStore((s) => s.fileMetadata)
+  const fileMetadataList = useAppStore((s) => s.fileMetadataList)
   const importStep = useAppStore((s) => s.importStep)
+
+  const fileCount = fileMetadataList.length
+  const firstFile = fileMetadataList[0]
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -19,18 +22,23 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
-        {fileMetadata && importStep === 'done' && (
+        {firstFile && importStep === 'done' && (
           <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
             <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
-            <span className="font-mono truncate max-w-48" title={fileMetadata.sha256}>
-              SHA-256: {fileMetadata.sha256.substring(0, 16)}...
+            <span className="font-mono truncate max-w-48" title={firstFile.sha256}>
+              SHA-256: {firstFile.sha256.substring(0, 16)}...
             </span>
+            {fileCount > 1 && (
+              <span className="text-gray-400">+{fileCount - 1}</span>
+            )}
           </div>
         )}
-        {fileMetadata && (
-          <span className="text-sm text-gray-600">{fileMetadata.name}</span>
+        {fileCount > 0 && (
+          <span className="text-sm text-gray-600">
+            {fileCount === 1 ? firstFile.name : `${fileCount} Dateien`}
+          </span>
         )}
       </div>
     </header>

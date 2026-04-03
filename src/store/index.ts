@@ -21,7 +21,7 @@ interface AppState {
   csvHeaders: string[]
   csvPreview: string[][]
   columnMapping: ColumnMapping
-  fileMetadata: FileMetadata | null
+  fileMetadataList: FileMetadata[]
 
   // Processed data
   days: DayData[]
@@ -38,7 +38,7 @@ interface AppState {
   inputIsUTC: boolean
 
   // Actions
-  loadFile: (file: File) => Promise<void>
+  loadFiles: (files: File[]) => Promise<void>
   setMapping: (field: string, csvColumn: string) => void
   confirmMapping: () => void
   resetImport: () => void
@@ -55,7 +55,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   csvHeaders: [],
   csvPreview: [],
   columnMapping: {},
-  fileMetadata: null,
+  fileMetadataList: [],
   days: [],
   importErrors: [],
   dstWarnings: [],
@@ -71,28 +71,55 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedDay: null,
   inputIsUTC: false,
 
-  loadFile: async (file: File) => {
-    const [text, arrayBuffer] = await Promise.all([
-      file.text(),
-      file.arrayBuffer(),
-    ])
+  loadFiles: async (files: File[]) => {
+    // Process all files in parallel
+    const fileResults = await Promise.all(
+      files.map(async (file) => {
+        const [text, arrayBuffer] = await Promise.all([
+          file.text(),
+          file.arrayBuffer(),
+        ])
+        const sha256 = await computeSHA256(arrayBuffer)
+        return { text, file, sha256 }
+      })
+    )
 
-    const sha256 = await computeSHA256(arrayBuffer)
-    const { headers, preview } = parseCSVPreview(text)
+    // Merge CSV texts: use header from first file, skip headers in subsequent files
+    const texts = fileResults.map((r) => r.text)
+    let mergedText: string
+
+    if (texts.length === 1) {
+      mergedText = texts[0]
+    } else {
+      const lines0 = texts[0].split('\n')
+      const header = lines0[0]
+      const dataLines = [
+        ...lines0.slice(1),
+        ...texts.slice(1).flatMap((t) => {
+          const lines = t.split('\n')
+          return lines.slice(1) // skip header
+        }),
+      ].filter((line) => line.trim().length > 0)
+      mergedText = [header, ...dataLines].join('\n')
+    }
+
+    const { headers, preview } = parseCSVPreview(mergedText)
     const mapping = autoDetectMapping(headers)
 
+    const metadataList: FileMetadata[] = fileResults.map((r) => ({
+      name: r.file.name,
+      size: r.file.size,
+      sha256: r.sha256,
+      importTimestamp: new Date(),
+    }))
+
     set({
-      csvText: text,
+      csvText: mergedText,
       csvHeaders: headers,
       csvPreview: preview,
       columnMapping: mapping,
       importStep: 'mapping',
-      fileMetadata: {
-        name: file.name,
-        size: file.size,
-        sha256,
-        importTimestamp: new Date(),
-      },
+      fileMetadataList: metadataList,
       // Reset previous data
       days: [],
       importErrors: [],
@@ -145,7 +172,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       csvHeaders: [],
       csvPreview: [],
       columnMapping: {},
-      fileMetadata: null,
+      fileMetadataList: [],
       days: [],
       importErrors: [],
       dstWarnings: [],

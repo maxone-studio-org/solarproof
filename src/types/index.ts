@@ -71,13 +71,16 @@ export interface DaySimulation {
   }
 }
 
-/** File metadata captured at upload */
+/** File metadata captured at upload (one per CSV file) */
 export interface FileMetadata {
   name: string
   size: number
   sha256: string
   importTimestamp: Date
 }
+
+/** Combined metadata for all uploaded files */
+export type FileMetadataList = FileMetadata[]
 
 /** DST warning for display */
 export interface DstWarning {

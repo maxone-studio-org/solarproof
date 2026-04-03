@@ -10,7 +10,7 @@ export function ExportPanel() {
   const days = useAppStore((s) => s.days)
   const simulationResults = useAppStore((s) => s.simulationResults)
   const simulationParams = useAppStore((s) => s.simulationParams)
-  const fileMetadata = useAppStore((s) => s.fileMetadata)
+  const fileMetadataList = useAppStore((s) => s.fileMetadataList)
   const selectedMonth = useAppStore((s) => s.selectedMonth)
   const importStep = useAppStore((s) => s.importStep)
 
@@ -24,7 +24,7 @@ export function ExportPanel() {
   const tsrBlobRef = useRef<Blob | null>(null)
 
   const handleExport = useCallback(async () => {
-    if (!selectedMonth || !fileMetadata) return
+    if (!selectedMonth || fileMetadataList.length === 0) return
 
     setExportState('generating')
     setErrorMsg('')
@@ -43,7 +43,7 @@ export function ExportPanel() {
         days,
         simResults: simulationResults,
         params: simulationParams,
-        fileMetadata,
+        fileMetadataList,
         socChartImage,
         evChartImage,
       })
@@ -72,7 +72,7 @@ export function ExportPanel() {
       setExportState('error')
       setErrorMsg(err instanceof Error ? err.message : 'Unbekannter Fehler')
     }
-  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadata])
+  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList])
 
   const downloadPdf = useCallback(() => {
     if (!pdfBlobRef.current || !selectedMonth) return
