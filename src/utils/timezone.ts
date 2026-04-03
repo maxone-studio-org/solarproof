@@ -106,29 +106,36 @@ export function processRawData(
       return b.getHours()
     })
 
-    // Spring forward: hour 2 doesn't exist → missing hour
-    const month = parseInt(dayKey.split('-')[1])
-    if (month === 3) {
-      const has2am = hours.includes(2)
-      if (!has2am && dayIntervals.length > 12) {
-        warnings.push({
-          date: dayKey,
-          type: 'missing_hour',
-          message: `${dayKey}: Sommerzeitumstellung — Stunde 02:00 fehlt (erwartet).`,
-        })
-        seenDstDates.add(dayKey)
+    // Only check DST if data covers the 01:00-03:00 range
+    const has1am = hours.includes(1)
+    const has3am = hours.includes(3)
+    const coversNightHours = has1am && has3am
+
+    if (coversNightHours) {
+      // Spring forward: hour 2 doesn't exist → missing hour
+      const month = parseInt(dayKey.split('-')[1])
+      if (month === 3) {
+        const has2am = hours.includes(2)
+        if (!has2am) {
+          warnings.push({
+            date: dayKey,
+            type: 'missing_hour',
+            message: `${dayKey}: Sommerzeitumstellung — Stunde 02:00 fehlt (erwartet).`,
+          })
+          seenDstDates.add(dayKey)
+        }
       }
-    }
-    // Fall back: hour 2 appears twice → double hour
-    if (month === 10) {
-      const count2am = hours.filter((h) => h === 2).length
-      if (count2am > 1) {
-        warnings.push({
-          date: dayKey,
-          type: 'double_hour',
-          message: `${dayKey}: Winterzeitumstellung — Stunde 02:00 doppelt vorhanden.`,
-        })
-        seenDstDates.add(dayKey)
+      // Fall back: hour 2 appears twice → double hour
+      if (month === 10) {
+        const count2am = hours.filter((h) => h === 2).length
+        if (count2am > 1) {
+          warnings.push({
+            date: dayKey,
+            type: 'double_hour',
+            message: `${dayKey}: Winterzeitumstellung — Stunde 02:00 doppelt vorhanden.`,
+          })
+          seenDstDates.add(dayKey)
+        }
       }
     }
   }
