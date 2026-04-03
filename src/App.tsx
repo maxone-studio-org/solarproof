@@ -6,6 +6,7 @@ import { SimulationConfig } from './components/SimulationConfig'
 import { Calendar } from './components/Calendar'
 import { MonthSummary } from './components/MonthSummary'
 import { DayDetailModal } from './components/DayDetailModal'
+import { ExportPanel } from './components/ExportPanel'
 import { useAppStore } from './store'
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
             {/* Sidebar */}
             <div className="space-y-4">
               <SimulationConfig />
+              <ExportPanel />
             </div>
 
             {/* Main area */}
