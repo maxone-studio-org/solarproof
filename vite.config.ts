@@ -12,6 +12,7 @@ const gitCommitHash = (() => {
 })()
 
 export default defineConfig({
+  base: '/pv-analyse-pro/',
   plugins: [react(), tailwindcss()],
   define: {
     __GIT_COMMIT__: JSON.stringify(gitCommitHash),
