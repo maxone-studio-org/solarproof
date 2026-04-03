@@ -6,6 +6,7 @@ export interface RawDataRow {
   verbrauch_kwh: number
   einspeisung_kwh: number | null
   netzbezug_kwh: number | null
+  sourceFileIndex: number
 }
 
 /** Single measurement interval with UTC timestamp */
@@ -15,6 +16,7 @@ export interface MeasurementInterval {
   verbrauch_kwh: number
   einspeisung_kwh: number
   netzbezug_kwh: number
+  sourceFileIndex: number // index into fileMetadataList
 }
 
 /** Aggregated day data */
@@ -98,9 +100,17 @@ export interface DataGap {
   message: string
 }
 
-/** Overlap entry: duplicate timestamps from multiple files */
-export interface DataOverlap {
-  date: string
-  count: number // how many duplicate intervals
-  resolution: 'first' // which source won
+/** Detailed overlap conflict record */
+export interface OverlapConflict {
+  timestamp: Date
+  keptFileIndex: number   // sourceFileIndex that was kept
+  droppedFileIndex: number // sourceFileIndex that was discarded
+}
+
+/** Summary of overlaps between two files */
+export interface OverlapSummary {
+  fileIndexA: number
+  fileIndexB: number
+  count: number
+  conflicts: OverlapConflict[] // all individual conflicts
 }

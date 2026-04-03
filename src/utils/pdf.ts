@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { DataGap, DayData, DaySimulation, FileMetadata, SimulationParams } from '../types'
+import type { DataGap, DayData, DaySimulation, FileMetadata, OverlapSummary, SimulationParams } from '../types'
 
 interface PdfExportOptions {
   month: string // YYYY-MM
@@ -10,7 +10,7 @@ interface PdfExportOptions {
   params: SimulationParams
   fileMetadataList: FileMetadata[]
   dataGaps: DataGap[]
-  overlapCount: number
+  overlapSummaries: OverlapSummary[]
   socChartImage?: string // base64 data URL
   evChartImage?: string  // base64 data URL
 }
@@ -37,7 +37,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
-  const { month, anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapCount, socChartImage, evChartImage } = options
+  const { month, anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries, socChartImage, evChartImage } = options
 
   const [yearStr, monthStr] = month.split('-')
   const monthName = MONTHS[parseInt(monthStr) - 1]
@@ -157,7 +157,8 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
   y += 8
 
   // Datenvollständigkeit
-  if (dataGaps.length > 0 || overlapCount > 0) {
+  const totalOverlaps = overlapSummaries.reduce((s, o) => s + o.count, 0)
+  if (dataGaps.length > 0 || totalOverlaps > 0) {
     // Check if we need a new page
     if (y > 240) {
       doc.addPage()
@@ -181,12 +182,17 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
     )
     y += 5
 
-    if (overlapCount > 0) {
+    // Per-file-pair overlap summaries
+    for (const os of overlapSummaries) {
+      const nameA = fileMetadataList[os.fileIndexA]?.name ?? `Datei ${os.fileIndexA + 1}`
+      const hashA = fileMetadataList[os.fileIndexA]?.sha256.substring(0, 16) ?? '?'
+      const nameB = fileMetadataList[os.fileIndexB]?.name ?? `Datei ${os.fileIndexB + 1}`
+      const hashB = fileMetadataList[os.fileIndexB]?.sha256.substring(0, 16) ?? '?'
       doc.text(
-        `${overlapCount} Überlappung${overlapCount !== 1 ? 'en' : ''} zwischen Dateien bereinigt (erste Datei hat Vorrang).`,
+        `${os.count} Konflikte: ${nameA} (${hashA}...) vs. ${nameB} (${hashB}...) — Vorrang: ${nameA}`,
         margin, y
       )
-      y += 5
+      y += 4
     }
 
     doc.setFontSize(8)
@@ -239,7 +245,48 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
     }
 
     y = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? y
-    y += 8
+    y += 4
+
+    // Overlap detail table (only if ≤50 total conflicts)
+    if (totalOverlaps > 0 && totalOverlaps <= 50) {
+      if (y > 240) { doc.addPage(); y = 20 }
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Konfliktprotokoll (Überlappungen)', margin, y)
+      y += 4
+
+      const conflictRows = overlapSummaries.flatMap((os) =>
+        os.conflicts.map((c) => {
+          const nameA = fileMetadataList[c.keptFileIndex]?.name ?? `Datei ${c.keptFileIndex + 1}`
+          const nameB = fileMetadataList[c.droppedFileIndex]?.name ?? `Datei ${c.droppedFileIndex + 1}`
+          const ts = c.timestamp.toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })
+          return [ts, nameA, nameB, nameA]
+        })
+      )
+
+      autoTable(doc, {
+        startY: y,
+        margin: { left: margin, right: margin },
+        head: [['Zeitstempel', 'Verwendet (Datei)', 'Verworfen (Datei)', 'Vorrang']],
+        body: conflictRows,
+        styles: { fontSize: 7, font: 'helvetica', cellPadding: 1.5 },
+        headStyles: { fillColor: [59, 130, 246], textColor: 255, fontSize: 7 },
+        alternateRowStyles: { fillColor: [239, 246, 255] },
+      })
+
+      y = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? y
+    } else if (totalOverlaps > 50) {
+      doc.setFontSize(8)
+      doc.setTextColor(100, 100, 100)
+      doc.text(
+        `Vollständiges Konfliktprotokoll (${totalOverlaps} Einträge) auf Anfrage reproduzierbar via Git-Commit ${__GIT_COMMIT__}.`,
+        margin, y
+      )
+      doc.setTextColor(0, 0, 0)
+      y += 5
+    }
+
+    y += 4
   }
 
   // Disclaimer

@@ -83,6 +83,7 @@ export function processRawData(
       verbrauch_kwh: row.verbrauch_kwh,
       einspeisung_kwh: row.einspeisung_kwh ?? 0,
       netzbezug_kwh: row.netzbezug_kwh ?? 0,
+      sourceFileIndex: row.sourceFileIndex,
     })
   }
 

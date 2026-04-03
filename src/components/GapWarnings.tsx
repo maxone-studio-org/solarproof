@@ -2,15 +2,21 @@ import { useAppStore } from '../store'
 
 export function GapWarnings() {
   const dataGaps = useAppStore((s) => s.dataGaps)
-  const overlapCount = useAppStore((s) => s.overlapCount)
+  const overlapSummaries = useAppStore((s) => s.overlapSummaries)
+  const fileMetadataList = useAppStore((s) => s.fileMetadataList)
   const importStep = useAppStore((s) => s.importStep)
 
   if (importStep !== 'done') return null
-  if (dataGaps.length === 0 && overlapCount === 0) return null
+
+  const totalOverlaps = overlapSummaries.reduce((s, o) => s + o.count, 0)
+  if (dataGaps.length === 0 && totalOverlaps === 0) return null
 
   const missingDays = dataGaps.filter((g) => g.type === 'missing_days')
   const missingIntervals = dataGaps.filter((g) => g.type === 'missing_intervals')
   const totalGapHours = dataGaps.reduce((s, g) => s + g.durationHours, 0)
+
+  const fileName = (idx: number) => fileMetadataList[idx]?.name ?? `Datei ${idx + 1}`
+  const fileHash = (idx: number) => fileMetadataList[idx]?.sha256.substring(0, 12) ?? '???'
 
   return (
     <div className="space-y-2">
@@ -23,12 +29,14 @@ export function GapWarnings() {
           <div>
             <p className="text-sm font-semibold text-red-800">
               Datenvollständigkeit: {dataGaps.length} Lücke{dataGaps.length !== 1 && 'n'} erkannt
-              {overlapCount > 0 && `, ${overlapCount} Überlappung${overlapCount !== 1 ? 'en' : ''} bereinigt`}
+              {totalOverlaps > 0 && `, ${totalOverlaps} Überlappung${totalOverlaps !== 1 ? 'en' : ''} bereinigt`}
             </p>
-            <p className="text-xs text-red-700 mt-0.5">
-              Gesamtdauer ohne Daten: {formatTotalHours(totalGapHours)}.
-              Simulation hat für diese Zeiträume keine Grundlage — im PDF dokumentiert.
-            </p>
+            {dataGaps.length > 0 && (
+              <p className="text-xs text-red-700 mt-0.5">
+                Gesamtdauer ohne Daten: {formatTotalHours(totalGapHours)}.
+                Simulation hat für diese Zeiträume keine Grundlage — im PDF dokumentiert.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -70,15 +78,19 @@ export function GapWarnings() {
         </div>
       )}
 
-      {/* Overlaps */}
-      {overlapCount > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+      {/* Overlaps — per file pair with names and hashes */}
+      {overlapSummaries.map((os, i) => (
+        <div key={i} className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
           <p className="text-xs text-blue-800">
-            <span className="font-semibold">{overlapCount} Überlappung{overlapCount !== 1 ? 'en' : ''}</span> zwischen Dateien erkannt und bereinigt.
-            Bei identischen Zeitstempeln wurde der Wert aus der zuerst hochgeladenen Datei verwendet.
+            <span className="font-semibold">{os.count} Überlappung{os.count !== 1 ? 'en' : ''}</span> zwischen{' '}
+            <span className="font-mono">{fileName(os.fileIndexA)}</span> ({fileHash(os.fileIndexA)}...) und{' '}
+            <span className="font-mono">{fileName(os.fileIndexB)}</span> ({fileHash(os.fileIndexB)}...).
+          </p>
+          <p className="text-xs text-blue-700 mt-0.5">
+            Vorrang: <span className="font-semibold">{fileName(os.fileIndexA)}</span> (zuerst hochgeladen).
           </p>
         </div>
-      )}
+      ))}
     </div>
   )
 }

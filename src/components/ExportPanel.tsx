@@ -12,7 +12,7 @@ export function ExportPanel() {
   const simulationParams = useAppStore((s) => s.simulationParams)
   const fileMetadataList = useAppStore((s) => s.fileMetadataList)
   const dataGaps = useAppStore((s) => s.dataGaps)
-  const overlapCount = useAppStore((s) => s.overlapCount)
+  const overlapSummaries = useAppStore((s) => s.overlapSummaries)
   const selectedMonth = useAppStore((s) => s.selectedMonth)
   const importStep = useAppStore((s) => s.importStep)
 
@@ -47,7 +47,7 @@ export function ExportPanel() {
         params: simulationParams,
         fileMetadataList,
         dataGaps,
-        overlapCount,
+        overlapSummaries,
         socChartImage,
         evChartImage,
       })
@@ -76,7 +76,7 @@ export function ExportPanel() {
       setExportState('error')
       setErrorMsg(err instanceof Error ? err.message : 'Unbekannter Fehler')
     }
-  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapCount])
+  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapSummaries])
 
   const downloadPdf = useCallback(() => {
     if (!pdfBlobRef.current || !selectedMonth) return

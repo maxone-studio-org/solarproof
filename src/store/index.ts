@@ -6,6 +6,7 @@ import type {
   DaySimulation,
   DstWarning,
   FileMetadata,
+  OverlapSummary,
   SimulationParams,
 } from '../types'
 import { autoDetectMapping, parseCSVPreview, parseCSVWithMapping, validateMapping } from '../utils/csv'
@@ -19,7 +20,8 @@ export type ImportStep = 'idle' | 'mapping' | 'done'
 interface AppState {
   // CSV / Import
   importStep: ImportStep
-  csvText: string | null
+  csvTexts: string[] // one per file, for per-file parsing with sourceFileIndex
+  csvText: string | null // merged text for preview
   csvHeaders: string[]
   csvPreview: string[][]
   columnMapping: ColumnMapping
@@ -30,7 +32,7 @@ interface AppState {
   importErrors: { line: number; message: string }[]
   dstWarnings: DstWarning[]
   dataGaps: DataGap[]
-  overlapCount: number
+  overlapSummaries: OverlapSummary[]
 
   // Simulation
   simulationParams: SimulationParams
@@ -55,6 +57,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   importStep: 'idle',
+  csvTexts: [],
   csvText: null,
   csvHeaders: [],
   csvPreview: [],
@@ -64,7 +67,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   importErrors: [],
   dstWarnings: [],
   dataGaps: [],
-  overlapCount: 0,
+  overlapSummaries: [],
   simulationParams: {
     kapazitaet_kwh: 10,
     entladetiefe_pct: 90,
@@ -120,6 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
 
     set({
+      csvTexts: fileResults.map((r) => r.text),
       csvText: mergedText,
       csvHeaders: headers,
       csvPreview: preview,
@@ -130,6 +134,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       days: [],
       importErrors: [],
       dstWarnings: [],
+      dataGaps: [],
+      overlapSummaries: [],
       simulationResults: [],
       selectedMonth: null,
       selectedDay: null,
@@ -143,8 +149,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   confirmMapping: () => {
-    const { csvText, columnMapping, inputIsUTC, simulationParams } = get()
-    if (!csvText) return
+    const { csvTexts, columnMapping, inputIsUTC, simulationParams } = get()
+    if (csvTexts.length === 0) return
 
     const errors = validateMapping(columnMapping)
     if (errors.length > 0) {
@@ -152,11 +158,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
 
-    const { rows, errors: parseErrors } = parseCSVWithMapping(csvText, columnMapping)
-    const { days: rawDays, warnings } = processRawData(rows, inputIsUTC)
+    // Parse each file separately to tag with sourceFileIndex
+    const allRows: import('../types').RawDataRow[] = []
+    const allParseErrors: { line: number; message: string }[] = []
 
-    // Deduplicate overlapping intervals (first file wins)
-    const { days, overlapCount } = deduplicateIntervals(rawDays)
+    for (let fileIdx = 0; fileIdx < csvTexts.length; fileIdx++) {
+      const { rows, errors: parseErrors } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping)
+      for (const row of rows) {
+        row.sourceFileIndex = fileIdx
+      }
+      allRows.push(...rows)
+      allParseErrors.push(...parseErrors.map((e) => ({
+        ...e,
+        message: csvTexts.length > 1 ? `Datei ${fileIdx + 1}, ${e.message}` : e.message,
+      })))
+    }
+
+    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC)
+
+    // Deduplicate overlapping intervals (first file wins, detailed tracking)
+    const { days, overlapSummaries } = deduplicateIntervals(rawDays)
 
     // Detect data gaps (missing days, missing intervals)
     const dataGaps = detectDataGaps(days)
@@ -169,10 +190,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       days,
-      importErrors: parseErrors,
+      importErrors: allParseErrors,
       dstWarnings: warnings,
       dataGaps,
-      overlapCount,
+      overlapSummaries,
       importStep: 'done',
       selectedMonth: firstMonth,
       simulationResults,
@@ -182,6 +203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetImport: () => {
     set({
       importStep: 'idle',
+      csvTexts: [],
       csvText: null,
       csvHeaders: [],
       csvPreview: [],
@@ -191,7 +213,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       importErrors: [],
       dstWarnings: [],
       dataGaps: [],
-      overlapCount: 0,
+      overlapSummaries: [],
       simulationResults: [],
       selectedMonth: null,
       selectedDay: null,

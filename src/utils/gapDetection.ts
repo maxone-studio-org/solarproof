@@ -1,6 +1,6 @@
 import { toZonedTime } from 'date-fns-tz'
 import { differenceInCalendarDays, differenceInMinutes, addDays, format } from 'date-fns'
-import type { DayData, DataGap } from '../types'
+import type { DayData, DataGap, OverlapConflict, OverlapSummary } from '../types'
 
 const TZ = 'Europe/Berlin'
 
@@ -87,21 +87,29 @@ export function detectDataGaps(days: DayData[]): DataGap[] {
 
 /**
  * Deduplicate intervals with the same timestamp.
- * Returns the deduped days and overlap count.
- * Strategy: keep first occurrence (from first CSV file).
+ * Strategy: keep first occurrence (lowest sourceFileIndex).
+ * Tracks every conflict with source file attribution.
  */
-export function deduplicateIntervals(days: DayData[]): { days: DayData[]; overlapCount: number } {
-  let overlapCount = 0
+export function deduplicateIntervals(days: DayData[]): {
+  days: DayData[]
+  overlapSummaries: OverlapSummary[]
+} {
+  const allConflicts: OverlapConflict[] = []
 
   const dedupedDays = days.map((day) => {
-    const seen = new Set<number>()
+    const seen = new Map<number, number>() // timestamp → sourceFileIndex of keeper
     const uniqueIntervals = day.intervals.filter((interval) => {
       const key = interval.timestamp.getTime()
-      if (seen.has(key)) {
-        overlapCount++
+      const existing = seen.get(key)
+      if (existing !== undefined) {
+        allConflicts.push({
+          timestamp: interval.timestamp,
+          keptFileIndex: existing,
+          droppedFileIndex: interval.sourceFileIndex,
+        })
         return false
       }
-      seen.add(key)
+      seen.set(key, interval.sourceFileIndex)
       return true
     })
 
@@ -119,7 +127,24 @@ export function deduplicateIntervals(days: DayData[]): { days: DayData[]; overla
     }
   })
 
-  return { days: dedupedDays, overlapCount }
+  // Group conflicts into summaries per file pair
+  const pairMap = new Map<string, OverlapSummary>()
+  for (const c of allConflicts) {
+    const key = `${c.keptFileIndex}-${c.droppedFileIndex}`
+    if (!pairMap.has(key)) {
+      pairMap.set(key, {
+        fileIndexA: c.keptFileIndex,
+        fileIndexB: c.droppedFileIndex,
+        count: 0,
+        conflicts: [],
+      })
+    }
+    const summary = pairMap.get(key)!
+    summary.count++
+    summary.conflicts.push(c)
+  }
+
+  return { days: dedupedDays, overlapSummaries: [...pairMap.values()] }
 }
 
 function parseDay(dateStr: string): Date {

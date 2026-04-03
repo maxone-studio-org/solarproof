@@ -176,6 +176,7 @@ export function parseCSVWithMapping(
         verbrauch_kwh: verbrauch,
         einspeisung_kwh: einspeisung,
         netzbezug_kwh: netzbezug,
+        sourceFileIndex: 0, // overridden by store for multi-file
       })
     } catch {
       errors.push({ line: lineNum, message: 'Zeile konnte nicht verarbeitet werden' })
