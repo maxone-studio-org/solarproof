@@ -3,6 +3,7 @@ import { useAppStore } from '../store'
 import { generateMonthlyPdf } from '../utils/pdf'
 import { requestTimestamp, computePdfHash } from '../utils/timestamp'
 import { renderMonthlySocChart, renderMonthlyEvChart } from '../utils/chartExport'
+import { calculateCostComparison } from '../utils/cost'
 
 type ExportState = 'idle' | 'generating' | 'timestamping' | 'done' | 'error'
 
@@ -13,6 +14,8 @@ export function ExportPanel() {
   const fileMetadataList = useAppStore((s) => s.fileMetadataList)
   const dataGaps = useAppStore((s) => s.dataGaps)
   const overlapSummaries = useAppStore((s) => s.overlapSummaries)
+  const costParams = useAppStore((s) => s.costParams)
+  const costCapOverrides = useAppStore((s) => s.costCapOverrides)
   const selectedMonth = useAppStore((s) => s.selectedMonth)
   const importStep = useAppStore((s) => s.importStep)
 
@@ -48,6 +51,9 @@ export function ExportPanel() {
         fileMetadataList,
         dataGaps,
         overlapSummaries,
+        costComparison: costParams.kreditrate_eur_monat > 0 || costParams.nachzahlung_eur_jahr > 0
+          ? calculateCostComparison(days, costParams, costCapOverrides)
+          : undefined,
         socChartImage,
         evChartImage,
       })
@@ -76,7 +82,7 @@ export function ExportPanel() {
       setExportState('error')
       setErrorMsg(err instanceof Error ? err.message : 'Unbekannter Fehler')
     }
-  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapSummaries])
+  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapSummaries, costParams, costCapOverrides])
 
   const downloadPdf = useCallback(() => {
     if (!pdfBlobRef.current || !selectedMonth) return

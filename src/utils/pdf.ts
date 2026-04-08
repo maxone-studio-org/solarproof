@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { DataGap, DayData, DaySimulation, FileMetadata, OverlapSummary, SimulationParams } from '../types'
+import type { YearCostComparison } from '../types/cost'
 
 interface PdfExportOptions {
   month: string // YYYY-MM
@@ -11,6 +12,7 @@ interface PdfExportOptions {
   fileMetadataList: FileMetadata[]
   dataGaps: DataGap[]
   overlapSummaries: OverlapSummary[]
+  costComparison?: YearCostComparison[]
   socChartImage?: string // base64 data URL
   evChartImage?: string  // base64 data URL
 }
@@ -412,6 +414,74 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
     headStyles: { fillColor: [245, 158, 11], textColor: 255, fontSize: 7 },
     alternateRowStyles: { fillColor: [252, 250, 245] },
   })
+
+  // ── Kostenvergleich ────────────────────────────────────
+
+  const costData = options.costComparison
+  if (costData && costData.length > 0) {
+    doc.addPage()
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(14)
+    doc.text('Kostenvergleich: Anlage vs. Stromeinkauf', margin, 20)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text(
+      'Wäre es günstiger gewesen, den Strom einfach vom Versorger zu kaufen?',
+      margin, 28
+    )
+
+    const totalKosten = costData.reduce((s, r) => s + r.gesamtkosten_eur, 0)
+    const totalEigen = costData.reduce((s, r) => s + r.eigenverbrauch_kwh, 0)
+    const totalAeq = costData.reduce((s, r) => s + r.aequivalent_kwh, 0)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(
+      `Für Gesamtkosten von ${totalKosten.toFixed(0)} EUR hätten ${totalAeq.toFixed(0)} kWh Strom gekauft werden können. Tatsächlich selbst genutzt: ${totalEigen.toFixed(0)} kWh.`,
+      margin, 36, { maxWidth: contentWidth }
+    )
+
+    autoTable(doc, {
+      startY: 44,
+      margin: { left: margin, right: margin },
+      head: [['Jahr', 'Gesamtkosten (EUR)', 'Strompreis (ct/kWh)', 'Kaufbar (kWh)', 'Eigenverbrauch (kWh)', 'Differenz (kWh)']],
+      body: [
+        ...costData.map((r) => [
+          String(r.year),
+          r.gesamtkosten_eur.toFixed(0),
+          r.strompreis_ct.toFixed(1),
+          r.aequivalent_kwh.toFixed(0),
+          r.eigenverbrauch_kwh.toFixed(0),
+          `${r.differenz_kwh >= 0 ? '+' : ''}${r.differenz_kwh.toFixed(0)}`,
+        ]),
+        [
+          'Gesamt',
+          totalKosten.toFixed(0),
+          '—',
+          totalAeq.toFixed(0),
+          totalEigen.toFixed(0),
+          `${(totalEigen - totalAeq) >= 0 ? '+' : ''}${(totalEigen - totalAeq).toFixed(0)}`,
+        ],
+      ],
+      styles: { fontSize: 8, font: 'helvetica', cellPadding: 2 },
+      headStyles: { fillColor: [245, 158, 11], textColor: 255, fontSize: 8 },
+      alternateRowStyles: { fillColor: [252, 250, 245] },
+    })
+
+    const afterCostTable = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? 100
+    doc.setFontSize(8)
+    doc.setTextColor(100, 100, 100)
+    doc.text(
+      'Strompreise: BDEW-Durchschnittspreise Haushaltsstrom (brutto). 2022/2023 mit Strompreisbremse (max. 40 ct/kWh).',
+      margin, afterCostTable + 5
+    )
+    doc.text(
+      'Keine Investitionsanalyse. Zeigt nur ob Stromeinkauf günstiger gewesen wäre.',
+      margin, afterCostTable + 9
+    )
+    doc.setTextColor(0, 0, 0)
+  }
 
   // ── Footer auf allen Seiten ──────────────────────────
 

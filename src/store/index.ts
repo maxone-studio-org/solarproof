@@ -9,6 +9,7 @@ import type {
   OverlapSummary,
   SimulationParams,
 } from '../types'
+import type { CostParams } from '../types/cost'
 import { autoDetectMapping, parseCSVPreview, parseCSVWithMapping, validateMapping } from '../utils/csv'
 import { processRawData } from '../utils/timezone'
 import { runSimulation } from '../utils/simulation'
@@ -42,6 +43,10 @@ interface AppState {
   pendingFiles: { texts: string[]; metadata: FileMetadata[] } | null
   duplicateInfo: { duplicateCount: number; totalCount: number; isFullDuplicate: boolean; fileName: string } | null
 
+  // Cost comparison
+  costParams: CostParams
+  costCapOverrides: Record<number, boolean>
+
   // UI
   selectedMonth: string | null // YYYY-MM
   selectedDay: string | null // YYYY-MM-DD
@@ -52,6 +57,8 @@ interface AppState {
   loadFiles: (files: File[]) => Promise<void>
   confirmDuplicate: (mode: 'new_only' | 'replace') => void
   cancelDuplicate: () => void
+  setCostParam: <K extends keyof CostParams>(key: K, value: CostParams[K]) => void
+  setCostCapOverride: (year: number, active: boolean) => void
   setMapping: (field: string, csvColumn: string) => void
   confirmMapping: () => void
   resetImport: () => void
@@ -83,6 +90,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     anfangs_soc_pct: 0,
   },
   simulationResults: [],
+  costParams: {
+    kreditrate_eur_monat: 0,
+    nachzahlung_eur_jahr: 0,
+    rueckerstattung_eur_jahr: 0,
+    wartung_eur_jahr: 0,
+    cloud_eur_monat: 0,
+    einspeiseverguetung_ct_kwh: 8.2,
+  },
+  costCapOverrides: {},
   pendingFiles: null,
   duplicateInfo: null,
   selectedMonth: null,
@@ -359,4 +375,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedMonth: (month) => set({ selectedMonth: month, selectedDay: null }),
   setSelectedDay: (day) => set({ selectedDay: day }),
   setInputIsUTC: (isUTC) => set({ inputIsUTC: isUTC }),
+
+  setCostParam: (key, value) => {
+    set((s) => ({ costParams: { ...s.costParams, [key]: value } }))
+  },
+  setCostCapOverride: (year, active) => {
+    set((s) => ({ costCapOverrides: { ...s.costCapOverrides, [year]: active } }))
+  },
 }))
