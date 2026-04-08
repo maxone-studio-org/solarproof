@@ -59,7 +59,6 @@ export function processRawData(
 
   const intervals: MeasurementInterval[] = []
   const warnings: DstWarning[] = []
-  const seenDstDates = new Set<string>()
 
   for (const row of rows) {
     const localDateTime = parse(
@@ -98,45 +97,58 @@ export function processRawData(
     dayMap.get(dayKey)!.push(interval)
   }
 
-  // Check DST anomalies per day
-  for (const [dayKey, dayIntervals] of dayMap) {
-    if (seenDstDates.has(dayKey)) continue
+  // Check DST anomalies — only on actual DST transition days
+  // Spring: last Sunday in March. Fall: last Sunday in October.
+  const dstDays = new Set<string>()
+  const years = new Set<number>()
+  for (const dayKey of dayMap.keys()) {
+    years.add(parseInt(dayKey.substring(0, 4)))
+  }
+  for (const year of years) {
+    // Last Sunday in March
+    for (let d = 31; d >= 25; d--) {
+      const date = new Date(year, 2, d) // March
+      if (date.getDay() === 0) { dstDays.add(`${year}-03-${String(d).padStart(2, '0')}`); break }
+    }
+    // Last Sunday in October
+    for (let d = 31; d >= 25; d--) {
+      const date = new Date(year, 9, d) // October
+      if (date.getDay() === 0) { dstDays.add(`${year}-10-${String(d).padStart(2, '0')}`); break }
+    }
+  }
+
+  for (const dayKey of dstDays) {
+    const dayIntervals = dayMap.get(dayKey)
+    if (!dayIntervals || dayIntervals.length === 0) continue
 
     const hours = dayIntervals.map((i) => {
       const b = toZonedTime(i.timestamp, TZ)
       return b.getHours()
     })
 
-    // Only check DST if data covers the 01:00-03:00 range
-    const has1am = hours.includes(1)
-    const has3am = hours.includes(3)
-    const coversNightHours = has1am && has3am
+    const month = parseInt(dayKey.split('-')[1])
 
-    if (coversNightHours) {
-      // Spring forward: hour 2 doesn't exist → missing hour
-      const month = parseInt(dayKey.split('-')[1])
-      if (month === 3) {
-        const has2am = hours.includes(2)
-        if (!has2am) {
-          warnings.push({
-            date: dayKey,
-            type: 'missing_hour',
-            message: `${dayKey}: Sommerzeitumstellung — Stunde 02:00 fehlt (erwartet).`,
-          })
-          seenDstDates.add(dayKey)
-        }
+    if (month === 3) {
+      const has1am = hours.includes(1)
+      const has3am = hours.includes(3)
+      const has2am = hours.includes(2)
+      if (has1am && has3am && !has2am) {
+        warnings.push({
+          date: dayKey,
+          type: 'missing_hour',
+          message: `${dayKey}: Sommerzeitumstellung — Stunde 02:00 fehlt (erwartet).`,
+        })
       }
-      // Fall back: hour 2 appears twice → double hour
-      if (month === 10) {
-        const count2am = hours.filter((h) => h === 2).length
-        if (count2am > 1) {
-          warnings.push({
-            date: dayKey,
-            type: 'double_hour',
-            message: `${dayKey}: Winterzeitumstellung — Stunde 02:00 doppelt vorhanden.`,
-          })
-          seenDstDates.add(dayKey)
-        }
+    }
+
+    if (month === 10) {
+      const count2am = hours.filter((h) => h === 2).length
+      if (count2am > 1) {
+        warnings.push({
+          date: dayKey,
+          type: 'double_hour',
+          message: `${dayKey}: Winterzeitumstellung — Stunde 02:00 doppelt vorhanden (erwartet).`,
+        })
       }
     }
   }
