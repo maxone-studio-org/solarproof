@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Header } from './components/Header'
 import { CsvImport } from './components/CsvImport'
 import { ColumnMapping } from './components/ColumnMapping'
@@ -20,15 +20,33 @@ import { useAppStore } from './store'
 
 function App() {
   const importStep = useAppStore((s) => s.importStep)
+  const rehydrating = useAppStore((s) => s.rehydrating)
+  const rehydrate = useAppStore((s) => s.rehydrate)
   const duplicateInfo = useAppStore((s) => s.duplicateInfo)
   const confirmDuplicate = useAppStore((s) => s.confirmDuplicate)
   const cancelDuplicate = useAppStore((s) => s.cancelDuplicate)
   const [landingOpen, setLandingOpen] = useState(false)
   const [creditsOpen, setCreditsOpen] = useState(false)
 
+  // Restore data from IndexedDB on first load
+  useEffect(() => { rehydrate() }, [rehydrate])
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header onCredits={() => setCreditsOpen(true)} />
+
+      {/* Loading indicator for data restore */}
+      {rehydrating && (
+        <div className="px-6 py-8 text-center">
+          <div className="inline-flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-6 py-3">
+            <svg className="w-5 h-5 text-amber-500 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm text-amber-800 font-medium">Gespeicherte Daten werden geladen...</span>
+          </div>
+        </div>
+      )}
 
       {/* Import area */}
       <CsvImport />

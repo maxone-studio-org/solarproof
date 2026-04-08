@@ -15,6 +15,7 @@ import { processRawData } from '../utils/timezone'
 import { runSimulation } from '../utils/simulation'
 import { computeSHA256 } from '../utils/hash'
 import { detectDataGaps, deduplicateIntervals } from '../utils/gapDetection'
+import { saveState, loadState, clearState, type PersistedState } from './persist'
 
 export type ImportStep = 'idle' | 'mapping' | 'done'
 
@@ -52,8 +53,10 @@ interface AppState {
   selectedDay: string | null // YYYY-MM-DD
   inputIsUTC: boolean
   showCredits: boolean
+  rehydrating: boolean // true while restoring from IndexedDB
 
   // Actions
+  rehydrate: () => Promise<void>
   loadFiles: (files: File[]) => Promise<void>
   confirmDuplicate: (mode: 'new_only' | 'replace') => void
   cancelDuplicate: () => void
@@ -105,6 +108,75 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedDay: null,
   inputIsUTC: false,
   showCredits: false,
+  rehydrating: false,
+
+  rehydrate: async () => {
+    const persisted = await loadState()
+    if (!persisted || persisted.csvTexts.length === 0) return
+
+    set({ rehydrating: true })
+
+    // Restore config
+    const fileMetadataList: FileMetadata[] = persisted.fileMetadataList.map((f) => ({
+      ...f,
+      importTimestamp: new Date(f.importTimestamp),
+    }))
+
+    // Merge CSV texts for preview
+    const texts = persisted.csvTexts
+    let mergedText: string
+    if (texts.length === 1) {
+      mergedText = texts[0]
+    } else {
+      const lines0 = texts[0].split('\n')
+      const header = lines0[0]
+      const dataLines = [
+        ...lines0.slice(1),
+        ...texts.slice(1).flatMap((t) => t.split('\n').slice(1)),
+      ].filter((l) => l.trim().length > 0)
+      mergedText = [header, ...dataLines].join('\n')
+    }
+    const { headers, preview } = parseCSVPreview(mergedText)
+
+    set({
+      csvTexts: texts,
+      csvText: mergedText,
+      csvHeaders: headers,
+      csvPreview: preview,
+      columnMapping: persisted.columnMapping,
+      fileMetadataList,
+      inputIsUTC: persisted.inputIsUTC,
+      simulationParams: persisted.simulationParams,
+      costParams: persisted.costParams,
+      costCapOverrides: persisted.costCapOverrides,
+    })
+
+    // Re-process data (parse, deduplicate, simulate)
+    const { csvTexts, columnMapping, inputIsUTC, simulationParams } = get()
+    const allRows: import('../types').RawDataRow[] = []
+    for (let fileIdx = 0; fileIdx < csvTexts.length; fileIdx++) {
+      const { rows } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping)
+      for (const row of rows) row.sourceFileIndex = fileIdx
+      allRows.push(...rows)
+    }
+
+    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC)
+    const { days, overlapSummaries } = deduplicateIntervals(rawDays)
+    const dataGaps = detectDataGaps(days)
+    const firstMonth = days.length > 0 ? days[0].date.substring(0, 7) : null
+    const simulationResults = runSimulation(days, simulationParams)
+
+    set({
+      days,
+      dstWarnings: warnings,
+      dataGaps,
+      overlapSummaries,
+      importStep: 'done',
+      selectedMonth: firstMonth,
+      simulationResults,
+      rehydrating: false,
+    })
+  },
 
   loadFiles: async (files: File[]) => {
     // Process all files in parallel
@@ -339,9 +411,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedMonth: firstMonth,
       simulationResults,
     })
+
+    // Persist to IndexedDB
+    const s = get()
+    persistCurrentState(s)
   },
 
   resetImport: () => {
+    clearState()
     set({
       importStep: 'idle',
       csvTexts: [],
@@ -370,6 +447,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? runSimulation(state.days, newParams)
       : []
     set({ simulationParams: newParams, simulationResults })
+    if (state.importStep === 'done') persistCurrentState(get())
   },
 
   setSelectedMonth: (month) => set({ selectedMonth: month, selectedDay: null }),
@@ -378,8 +456,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCostParam: (key, value) => {
     set((s) => ({ costParams: { ...s.costParams, [key]: value } }))
+    if (get().importStep === 'done') persistCurrentState(get())
   },
   setCostCapOverride: (year, active) => {
     set((s) => ({ costCapOverrides: { ...s.costCapOverrides, [year]: active } }))
+    if (get().importStep === 'done') persistCurrentState(get())
   },
 }))
+
+/** Save current inputs to IndexedDB (async, fire-and-forget) */
+function persistCurrentState(s: AppState) {
+  const persisted: PersistedState = {
+    csvTexts: s.csvTexts,
+    fileMetadataList: s.fileMetadataList.map((f) => ({
+      ...f,
+      importTimestamp: f.importTimestamp.toISOString(),
+    })),
+    columnMapping: s.columnMapping,
+    inputIsUTC: s.inputIsUTC,
+    simulationParams: s.simulationParams,
+    costParams: s.costParams,
+    costCapOverrides: s.costCapOverrides,
+  }
+  saveState(persisted)
+}
