@@ -14,6 +14,7 @@ import { LandingOverlay } from './components/LandingOverlay'
 import { DuplicateDialog } from './components/DuplicateDialog'
 import { CreditsOverlay } from './components/CreditsOverlay'
 import { CostComparison } from './components/CostComparison'
+import { AllMonthsOverview } from './components/AllMonthsOverview'
 import { FeedbackButton } from './components/FeedbackButton'
 import { useAppStore } from './store'
 
@@ -52,6 +53,7 @@ function App() {
 
             {/* Main area */}
             <div className="space-y-4">
+              <AllMonthsOverview />
               <Calendar />
               <MonthSummary />
             </div>

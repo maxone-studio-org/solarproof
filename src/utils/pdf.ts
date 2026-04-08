@@ -508,3 +508,355 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
 
   return doc.output('arraybuffer') as unknown as ArrayBuffer
 }
+
+// ═══════════════════════════════════════════════════════════
+// Gesamtbericht — all months in one PDF
+// ═══════════════════════════════════════════════════════════
+
+interface FullPdfExportOptions {
+  anlagenname: string
+  days: DayData[]
+  simResults: DaySimulation[]
+  params: SimulationParams
+  fileMetadataList: FileMetadata[]
+  dataGaps: DataGap[]
+  overlapSummaries: OverlapSummary[]
+  costComparison?: YearCostComparison[]
+}
+
+export function generateFullPdf(options: FullPdfExportOptions): ArrayBuffer {
+  const { anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries } = options
+  const now = new Date()
+
+  // Collect all months
+  const monthSet = new Set<string>()
+  for (const d of days) monthSet.add(d.date.substring(0, 7))
+  const allMonths = [...monthSet].sort()
+
+  const firstMonth = allMonths[0]
+  const lastMonth = allMonths[allMonths.length - 1]
+  const firstLabel = `${MONTHS[parseInt(firstMonth.split('-')[1]) - 1]} ${firstMonth.split('-')[0]}`
+  const lastLabel = `${MONTHS[parseInt(lastMonth.split('-')[1]) - 1]} ${lastMonth.split('-')[0]}`
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 15
+  const contentWidth = pageWidth - 2 * margin
+
+  // ── Deckblatt ──────────────────────────────────────────
+
+  doc.setFontSize(24)
+  doc.setFont('helvetica', 'bold')
+  doc.text('SolarProof', margin, 40)
+
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Gesamtbericht — Simulation Batteriespeicher', margin, 52)
+
+  doc.setFontSize(12)
+  let y = 70
+
+  const addField = (label: string, value: string) => {
+    doc.setFont('helvetica', 'bold')
+    doc.text(label, margin, y)
+    doc.setFont('helvetica', 'normal')
+    doc.text(value, margin + 55, y)
+    y += 7
+  }
+
+  addField('Anlage:', anlagenname || '(nicht angegeben)')
+  addField('Zeitraum:', `${firstLabel} – ${lastLabel}`)
+  addField('Erstellt:', formatDateTime(now))
+  addField('Monate:', `${allMonths.length}`)
+  addField('Tage mit Daten:', `${days.length}`)
+
+  y += 5
+  doc.setDrawColor(200, 200, 200)
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 10
+
+  // Quelldateien
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`Quelldateien (${fileMetadataList.length})`, margin, y)
+  y += 7
+
+  for (const fileMeta of fileMetadataList) {
+    if (y > 250) { doc.addPage(); y = 20 }
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    addField('Dateiname:', fileMeta.name)
+    addField('SHA-256:', '')
+    y -= 7 // back up to write hash on same line
+    doc.setFont('courier', 'normal')
+    doc.setFontSize(8)
+    doc.text(fileMeta.sha256, margin + 55, y)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    y += 8
+  }
+
+  y += 4
+
+  // Engine + Params
+  if (y > 220) { doc.addPage(); y = 20 }
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Simulationsparameter', margin, y)
+  y += 7
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'normal')
+  addField('Speicherkapazität:', `${params.kapazitaet_kwh} kWh`)
+  addField('Entladetiefe (DoD):', `${params.entladetiefe_pct} %`)
+  addField('Ladewirkungsgrad:', `${params.ladewirkungsgrad_pct} %`)
+  addField('Entladewirkungsgrad:', `${params.entladewirkungsgrad_pct} %`)
+  addField('Anfangs-SoC:', `${params.anfangs_soc_pct} %`)
+  addField('Version:', `${__APP_VERSION__} (${__GIT_COMMIT__})`)
+
+  y += 3
+  doc.setFontSize(8)
+  doc.setTextColor(100, 100, 100)
+  doc.text('Simulationsparameter wurden vom Nutzer festgelegt. Eine Validierung durch einen', margin, y)
+  y += 4
+  doc.text('Sachverständigen wird für gerichtliche Zwecke empfohlen.', margin, y)
+  doc.setTextColor(0, 0, 0)
+
+  // ── Gesamtübersicht aller Monate ────────────────────────
+
+  doc.addPage()
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('Gesamtübersicht — alle Monate', margin, 20)
+
+  const monthRows: string[][] = []
+  let grandTotals = {
+    tage: 0, erzeugung: 0, verbrauch: 0, einspeisung: 0,
+    netzbezug: 0, netzbezugSim: 0, ersparnis: 0,
+  }
+
+  for (const m of allMonths) {
+    const mDays = days.filter((d) => d.date.startsWith(m))
+    const mSim = simResults.filter((d) => d.date.startsWith(m))
+    const [yr, mo] = m.split('-')
+    const label = `${MONTHS[parseInt(mo) - 1]} ${yr}`
+
+    const erzeugung = mDays.reduce((s, d) => s + d.totals.erzeugung_kwh, 0)
+    const verbrauch = mDays.reduce((s, d) => s + d.totals.verbrauch_kwh, 0)
+    const einspeisung = mDays.reduce((s, d) => s + d.totals.einspeisung_kwh, 0)
+    const netzbezug = mDays.reduce((s, d) => s + d.totals.netzbezug_kwh, 0)
+    const netzbezugSim = mSim.reduce((s, d) => s + d.totals.netzbezug_sim_kwh, 0)
+    const ersparnis = netzbezug - netzbezugSim
+
+    grandTotals.tage += mDays.length
+    grandTotals.erzeugung += erzeugung
+    grandTotals.verbrauch += verbrauch
+    grandTotals.einspeisung += einspeisung
+    grandTotals.netzbezug += netzbezug
+    grandTotals.netzbezugSim += netzbezugSim
+    grandTotals.ersparnis += ersparnis
+
+    monthRows.push([
+      label,
+      String(mDays.length),
+      erzeugung.toFixed(0),
+      verbrauch.toFixed(0),
+      netzbezug.toFixed(0),
+      netzbezugSim.toFixed(0),
+      ersparnis.toFixed(0),
+    ])
+  }
+
+  // Grand total row
+  monthRows.push([
+    'Gesamt',
+    String(grandTotals.tage),
+    grandTotals.erzeugung.toFixed(0),
+    grandTotals.verbrauch.toFixed(0),
+    grandTotals.netzbezug.toFixed(0),
+    grandTotals.netzbezugSim.toFixed(0),
+    grandTotals.ersparnis.toFixed(0),
+  ])
+
+  autoTable(doc, {
+    startY: 28,
+    margin: { left: margin, right: margin },
+    head: [['Monat', 'Tage', 'Erzeugung\n(kWh)', 'Verbrauch\n(kWh)', 'Netzbezug\n(kWh)', 'NB sim.\n(kWh)', 'Ersparnis\n(kWh)']],
+    body: monthRows,
+    styles: { fontSize: 8, font: 'helvetica', cellPadding: 2 },
+    headStyles: { fillColor: [245, 158, 11], textColor: 255, fontSize: 8 },
+    alternateRowStyles: { fillColor: [252, 250, 245] },
+    didParseCell: (data) => {
+      // Bold + background for grand total row
+      if (data.row.index === monthRows.length - 1) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.fillColor = [245, 230, 200]
+      }
+    },
+  })
+
+  // ── Lückenprotokoll (summary) ────────────────────────
+
+  const totalOverlaps = overlapSummaries.reduce((s, o) => s + o.count, 0)
+  if (dataGaps.length > 0 || totalOverlaps > 0) {
+    let gy = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? 100
+    gy += 10
+
+    if (gy > 220) { doc.addPage(); gy = 20 }
+
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(180, 0, 0)
+    doc.text('Datenvollständigkeit — Lückenprotokoll', margin, gy)
+    doc.setTextColor(0, 0, 0)
+    gy += 7
+
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    const totalGapHours = dataGaps.reduce((s, g) => s + g.durationHours, 0)
+    doc.text(
+      `${dataGaps.length} Lücke${dataGaps.length !== 1 ? 'n' : ''} erkannt. Gesamtdauer: ${totalGapHours < 24 ? totalGapHours.toFixed(1) + ' Stunden' : (totalGapHours / 24).toFixed(1) + ' Tage'}.`,
+      margin, gy
+    )
+    gy += 5
+
+    if (totalOverlaps > 0) {
+      for (const os of overlapSummaries) {
+        const nameA = fileMetadataList[os.fileIndexA]?.name ?? `Datei ${os.fileIndexA + 1}`
+        const nameB = fileMetadataList[os.fileIndexB]?.name ?? `Datei ${os.fileIndexB + 1}`
+        doc.text(`${os.count} Konflikte: ${nameA} vs. ${nameB} — Vorrang: ${nameA}`, margin, gy)
+        gy += 4
+      }
+    }
+
+    // Gap table (first 50 for full report)
+    if (dataGaps.length > 0) {
+      autoTable(doc, {
+        startY: gy + 2,
+        margin: { left: margin, right: margin },
+        head: [['Typ', 'Zeitraum', 'Dauer', 'Beschreibung']],
+        body: dataGaps.slice(0, 50).map((g) => [
+          g.type === 'missing_days' ? 'Fehlende Tage' : 'Fehlende Intervalle',
+          `${g.from} – ${g.to}`,
+          g.durationHours < 1 ? `${Math.round(g.durationHours * 60)} Min.` :
+          g.durationHours < 24 ? `${g.durationHours.toFixed(1)} Std.` :
+          `${(g.durationHours / 24).toFixed(1)} Tage`,
+          g.message,
+        ]),
+        styles: { fontSize: 7, font: 'helvetica', cellPadding: 1.5 },
+        headStyles: { fillColor: [180, 0, 0], textColor: 255, fontSize: 7 },
+        alternateRowStyles: { fillColor: [255, 245, 245] },
+        columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 30 }, 2: { cellWidth: 18 }, 3: { cellWidth: 'auto' } },
+      })
+
+      if (dataGaps.length > 50) {
+        const tableEnd = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? gy + 20
+        doc.setFontSize(7)
+        doc.setTextColor(150, 150, 150)
+        doc.text(`... und ${dataGaps.length - 50} weitere Lücken. Reproduzierbar via Git-Commit ${__GIT_COMMIT__}.`, margin, tableEnd + 4)
+        doc.setTextColor(0, 0, 0)
+      }
+    }
+  }
+
+  // ── Kostenvergleich ────────────────────────────────────
+
+  const costData = options.costComparison
+  if (costData && costData.length > 0) {
+    doc.addPage()
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(14)
+    doc.text('Kostenvergleich: Anlage vs. Stromeinkauf', margin, 20)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text('Wäre es günstiger gewesen, den Strom einfach vom Versorger zu kaufen?', margin, 28)
+
+    const totalKosten = costData.reduce((s, r) => s + r.gesamtkosten_eur, 0)
+    const totalEigen = costData.reduce((s, r) => s + r.eigenverbrauch_kwh, 0)
+    const totalAeq = costData.reduce((s, r) => s + r.aequivalent_kwh, 0)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(
+      `Für Gesamtkosten von ${totalKosten.toFixed(0)} EUR hätten ${totalAeq.toFixed(0)} kWh Strom gekauft werden können. Tatsächlich selbst genutzt: ${totalEigen.toFixed(0)} kWh.`,
+      margin, 36, { maxWidth: contentWidth }
+    )
+
+    autoTable(doc, {
+      startY: 44,
+      margin: { left: margin, right: margin },
+      head: [['Jahr', 'Gesamtkosten (EUR)', 'Strompreis (ct/kWh)', 'Kaufbar (kWh)', 'Eigenverbrauch (kWh)', 'Differenz (kWh)']],
+      body: [
+        ...costData.map((r) => [
+          String(r.year),
+          r.gesamtkosten_eur.toFixed(0),
+          r.strompreis_ct.toFixed(1),
+          r.aequivalent_kwh.toFixed(0),
+          r.eigenverbrauch_kwh.toFixed(0),
+          `${r.differenz_kwh >= 0 ? '+' : ''}${r.differenz_kwh.toFixed(0)}`,
+        ]),
+        [
+          'Gesamt', totalKosten.toFixed(0), '—', totalAeq.toFixed(0), totalEigen.toFixed(0),
+          `${(totalEigen - totalAeq) >= 0 ? '+' : ''}${(totalEigen - totalAeq).toFixed(0)}`,
+        ],
+      ],
+      styles: { fontSize: 8, font: 'helvetica', cellPadding: 2 },
+      headStyles: { fillColor: [245, 158, 11], textColor: 255, fontSize: 8 },
+      alternateRowStyles: { fillColor: [252, 250, 245] },
+    })
+
+    const afterCostTable = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? 100
+    doc.setFontSize(8)
+    doc.setTextColor(100, 100, 100)
+    doc.text('Strompreise: BDEW-Durchschnittspreise Haushaltsstrom (brutto). 2022/2023 mit Strompreisbremse.', margin, afterCostTable + 5)
+    doc.text('Keine Investitionsanalyse. Zeigt nur ob Stromeinkauf günstiger gewesen wäre.', margin, afterCostTable + 9)
+    doc.setTextColor(0, 0, 0)
+  }
+
+  // ── Disclaimer ──────────────────────────────────────────
+
+  doc.addPage()
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('Hinweise', margin, 20)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  let dy = 32
+  const disclaimers = [
+    'Dieses Dokument enthält eine Simulation / Theoretische Berechnung.',
+    'Die dargestellten Speicherwerte sind simuliert und nicht gemessen.',
+    'Für den gerichtlichen Einsatz wird die Validierung durch einen',
+    'unabhängigen Sachverständigen empfohlen.',
+    '',
+    'Die Quelldateien und deren SHA-256-Hashes sind auf dem Deckblatt dokumentiert.',
+    'Das PDF kann mit einem RFC 3161 Zeitstempel versehen werden, der beweist,',
+    'dass dieses Dokument zu einem bestimmten Zeitpunkt in dieser Form existiert hat.',
+  ]
+  for (const line of disclaimers) {
+    doc.text(line, margin, dy)
+    dy += 5
+  }
+
+  // ── Footer auf allen Seiten ──────────────────────────
+
+  const pageCount = doc.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    const pageH = doc.internal.pageSize.getHeight()
+    doc.setFontSize(7)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(150, 150, 150)
+    doc.text(
+      `SolarProof v${__APP_VERSION__} (${__GIT_COMMIT__}) — Seite ${i}/${pageCount}`,
+      margin, pageH - 8
+    )
+    doc.text(
+      'Simulation / Theoretische Berechnung — Keine gemessenen Speicherdaten',
+      pageWidth - margin, pageH - 8, { align: 'right' }
+    )
+    doc.setTextColor(0, 0, 0)
+  }
+
+  return doc.output('arraybuffer') as unknown as ArrayBuffer
+}

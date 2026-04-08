@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback } from 'react'
 import { useAppStore } from '../store'
-import { generateMonthlyPdf } from '../utils/pdf'
+import { generateMonthlyPdf, generateFullPdf } from '../utils/pdf'
 import { requestTimestamp, computePdfHash } from '../utils/timestamp'
 import { renderMonthlySocChart, renderMonthlyEvChart } from '../utils/chartExport'
 import { calculateCostComparison } from '../utils/cost'
 
 type ExportState = 'idle' | 'generating' | 'timestamping' | 'done' | 'error'
+type ReportType = 'month' | 'full'
 
 export function ExportPanel() {
   const days = useAppStore((s) => s.days)
@@ -20,6 +21,7 @@ export function ExportPanel() {
   const importStep = useAppStore((s) => s.importStep)
 
   const [anlagenname, setAnlagenname] = useState('')
+  const [reportType, setReportType] = useState<ReportType>('full')
   const [exportState, setExportState] = useState<ExportState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [pdfHash, setPdfHash] = useState('')
@@ -27,9 +29,13 @@ export function ExportPanel() {
 
   const pdfBlobRef = useRef<Blob | null>(null)
   const tsrBlobRef = useRef<Blob | null>(null)
+  const lastFileNameRef = useRef<string>('')
+
+  const hasCostData = costParams.kreditrate_eur_monat > 0 || costParams.nachzahlung_eur_jahr > 0
 
   const handleExport = useCallback(async () => {
-    if (!selectedMonth || fileMetadataList.length === 0) return
+    if (fileMetadataList.length === 0) return
+    if (reportType === 'month' && !selectedMonth) return
 
     setExportState('generating')
     setErrorMsg('')
@@ -37,42 +43,56 @@ export function ExportPanel() {
     setTsrReady(false)
 
     try {
-      // Render charts offscreen
-      const socChartImage = renderMonthlySocChart(days, simulationResults, selectedMonth)
-      const evChartImage = renderMonthlyEvChart(days, selectedMonth)
+      let pdfBuffer: ArrayBuffer
 
-      // Generate PDF
-      const pdfBuffer = generateMonthlyPdf({
-        month: selectedMonth,
-        anlagenname,
-        days,
-        simResults: simulationResults,
-        params: simulationParams,
-        fileMetadataList,
-        dataGaps,
-        overlapSummaries,
-        costComparison: costParams.kreditrate_eur_monat > 0 || costParams.nachzahlung_eur_jahr > 0
-          ? calculateCostComparison(days, costParams, costCapOverrides)
-          : undefined,
-        socChartImage,
-        evChartImage,
-      })
+      if (reportType === 'full') {
+        pdfBuffer = generateFullPdf({
+          anlagenname,
+          days,
+          simResults: simulationResults,
+          params: simulationParams,
+          fileMetadataList,
+          dataGaps,
+          overlapSummaries,
+          costComparison: hasCostData
+            ? calculateCostComparison(days, costParams, costCapOverrides)
+            : undefined,
+        })
+        lastFileNameRef.current = 'pv-gesamtbericht'
+      } else {
+        const socChartImage = renderMonthlySocChart(days, simulationResults, selectedMonth!)
+        const evChartImage = renderMonthlyEvChart(days, selectedMonth!)
+
+        pdfBuffer = generateMonthlyPdf({
+          month: selectedMonth!,
+          anlagenname,
+          days,
+          simResults: simulationResults,
+          params: simulationParams,
+          fileMetadataList,
+          dataGaps,
+          overlapSummaries,
+          costComparison: hasCostData
+            ? calculateCostComparison(days, costParams, costCapOverrides)
+            : undefined,
+          socChartImage,
+          evChartImage,
+        })
+        lastFileNameRef.current = `pv-bericht-${selectedMonth}`
+      }
 
       const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
       pdfBlobRef.current = pdfBlob
 
-      // Compute PDF hash
       const hash = await computePdfHash(pdfBuffer)
       setPdfHash(hash)
 
-      // Request RFC 3161 timestamp
       setExportState('timestamping')
       try {
         const tsrBuffer = await requestTimestamp(pdfBuffer)
         tsrBlobRef.current = new Blob([tsrBuffer], { type: 'application/timestamp-reply' })
         setTsrReady(true)
       } catch (tsaErr) {
-        // TSA failure is non-fatal — PDF is still downloadable
         console.warn('TSA request failed:', tsaErr)
         setErrorMsg(`Zeitstempel-Anfrage fehlgeschlagen: ${tsaErr instanceof Error ? tsaErr.message : 'Unbekannter Fehler'}. PDF steht trotzdem zum Download bereit.`)
       }
@@ -82,27 +102,27 @@ export function ExportPanel() {
       setExportState('error')
       setErrorMsg(err instanceof Error ? err.message : 'Unbekannter Fehler')
     }
-  }, [selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapSummaries, costParams, costCapOverrides])
+  }, [reportType, selectedMonth, anlagenname, days, simulationResults, simulationParams, fileMetadataList, dataGaps, overlapSummaries, costParams, costCapOverrides, hasCostData])
 
   const downloadPdf = useCallback(() => {
-    if (!pdfBlobRef.current || !selectedMonth) return
+    if (!pdfBlobRef.current) return
     const url = URL.createObjectURL(pdfBlobRef.current)
     const a = document.createElement('a')
     a.href = url
-    a.download = `pv-bericht-${selectedMonth}.pdf`
+    a.download = `${lastFileNameRef.current}.pdf`
     a.click()
     URL.revokeObjectURL(url)
-  }, [selectedMonth])
+  }, [])
 
   const downloadTsr = useCallback(() => {
-    if (!tsrBlobRef.current || !selectedMonth) return
+    if (!tsrBlobRef.current) return
     const url = URL.createObjectURL(tsrBlobRef.current)
     const a = document.createElement('a')
     a.href = url
-    a.download = `pv-bericht-${selectedMonth}.tsr`
+    a.download = `${lastFileNameRef.current}.tsr`
     a.click()
     URL.revokeObjectURL(url)
-  }, [selectedMonth])
+  }, [])
 
   const downloadBundle = useCallback(() => {
     downloadPdf()
@@ -113,13 +133,44 @@ export function ExportPanel() {
 
   if (importStep !== 'done') return null
 
+  const canExport = reportType === 'full' || selectedMonth
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
       <h2 className="text-sm font-semibold text-gray-900 mb-1">PDF-Gutachten erstellen</h2>
       <p className="text-xs text-gray-500 mb-3">
         Das PDF enthält alle Messdaten, die Simulation und einen rechtssicheren Zeitstempel.
-        Du kannst es direkt deinem Anwalt oder Sachverständigen geben.
       </p>
+
+      {/* Report type toggle */}
+      <div className="flex gap-1 mb-3 bg-gray-100 rounded-lg p-0.5">
+        <button
+          onClick={() => { setReportType('full'); setExportState('idle') }}
+          className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${
+            reportType === 'full'
+              ? 'bg-white text-gray-900 font-medium shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Gesamtbericht
+        </button>
+        <button
+          onClick={() => { setReportType('month'); setExportState('idle') }}
+          className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${
+            reportType === 'month'
+              ? 'bg-white text-gray-900 font-medium shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Monatsbericht
+        </button>
+      </div>
+
+      {reportType === 'month' && !selectedMonth && (
+        <p className="text-xs text-amber-600 mb-3">
+          Wähle zuerst einen Monat im Kalender aus.
+        </p>
+      )}
 
       {/* Anlagenname */}
       <div className="mb-3">
@@ -138,18 +189,18 @@ export function ExportPanel() {
       {/* Export button */}
       <button
         onClick={handleExport}
-        disabled={exportState === 'generating' || exportState === 'timestamping'}
+        disabled={exportState === 'generating' || exportState === 'timestamping' || !canExport}
         className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
       >
         {exportState === 'generating' && 'PDF wird erstellt...'}
         {exportState === 'timestamping' && 'Zeitstempel wird angefordert...'}
-        {(exportState === 'idle' || exportState === 'done' || exportState === 'error') && 'Monatsbericht exportieren'}
+        {(exportState === 'idle' || exportState === 'done' || exportState === 'error') &&
+          (reportType === 'full' ? 'Gesamtbericht exportieren' : 'Monatsbericht exportieren')}
       </button>
 
       {/* Status */}
       {exportState === 'done' && (
         <div className="mt-3 space-y-2">
-          {/* PDF Hash */}
           {pdfHash && (
             <div className="p-2 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-500">SHA-256 des PDFs:</p>
@@ -157,7 +208,6 @@ export function ExportPanel() {
             </div>
           )}
 
-          {/* Download buttons */}
           <button
             onClick={downloadBundle}
             className="w-full bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
@@ -182,7 +232,6 @@ export function ExportPanel() {
             </div>
           )}
 
-          {/* TSR info */}
           {tsrReady && (
             <p className="text-xs text-green-700">
               Zeitstempel erfolgreich erstellt. Das beweist, dass dieses Dokument zu genau diesem Zeitpunkt in genau dieser Form existiert hat.
@@ -191,7 +240,6 @@ export function ExportPanel() {
         </div>
       )}
 
-      {/* Error */}
       {errorMsg && (
         <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
           <p className="text-xs text-yellow-800">{errorMsg}</p>
