@@ -54,7 +54,7 @@ export function LandingOverlay({ open, onClose }: Props) {
           <span className="text-xs font-medium text-amber-800">Open Source — kostenlos — kein Account</span>
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 tracking-tight">
-          PV-Analyse-Pro
+          SolarProof
         </h1>
         <p className="mt-4 text-lg text-gray-600 max-w-xl mx-auto leading-relaxed">
           Rechtssichere Dokumentation von PV-Einspeisedaten.
@@ -93,7 +93,7 @@ export function LandingOverlay({ open, onClose }: Props) {
 
           <h2 className="text-2xl font-bold text-gray-900 mt-12 mb-6">Die Lösung</h2>
           <p className="text-gray-600 leading-relaxed">
-            PV-Analyse-Pro nimmt deine realen Messdaten, simuliert einen funktionierenden
+            SolarProof nimmt deine realen Messdaten, simuliert einen funktionierenden
             Speicher mit den exakten Parametern deiner Anlage und erstellt ein PDF-Gutachten
             mit kryptografischer Integritätssicherung — gerichtsverwertbar und reproduzierbar.
           </p>
@@ -204,7 +204,7 @@ export function LandingOverlay({ open, onClose }: Props) {
             </svg>
           </button>
           <p className="mt-6 text-xs text-gray-400">
-            PV-Analyse-Pro v{__APP_VERSION__} — Open Source auf GitHub
+            SolarProof v{__APP_VERSION__} — Open Source auf GitHub
           </p>
         </div>
       </section>

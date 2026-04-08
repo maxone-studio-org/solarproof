@@ -16,7 +16,7 @@ export function Header({ onCredits }: { onCredits: () => void }) {
           </svg>
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">PV-Analyse-Pro</h1>
+          <h1 className="text-lg font-semibold text-gray-900">SolarProof</h1>
           <button
             onClick={onCredits}
             className="text-xs text-gray-400 hover:text-amber-500 transition-colors"

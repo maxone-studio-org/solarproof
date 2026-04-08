@@ -37,7 +37,7 @@ export function CreditsOverlay({ open, onClose }: Props) {
 
       <div className="max-w-2xl mx-auto px-6 py-20">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Credits</h1>
-        <p className="text-gray-500 mb-12">PV-Analyse-Pro v{__APP_VERSION__} ({__GIT_COMMIT__})</p>
+        <p className="text-gray-500 mb-12">SolarProof v{__APP_VERSION__} ({__GIT_COMMIT__})</p>
 
         {/* Developer */}
         <section className="mb-12">
@@ -105,7 +105,7 @@ export function CreditsOverlay({ open, onClose }: Props) {
         <section className="mb-12">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Hinweise</h2>
           <p className="text-sm text-gray-600 leading-relaxed">
-            PV-Analyse-Pro ist ein Werkzeug zur Simulation und Dokumentation.
+            SolarProof ist ein Werkzeug zur Simulation und Dokumentation.
             Die erzeugten Berichte stellen keine rechtliche oder technische Beratung dar.
             Für die Verwendung vor Gericht wird die Validierung durch einen
             Sachverständigen empfohlen.

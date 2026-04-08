@@ -55,7 +55,7 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
 
   doc.setFontSize(24)
   doc.setFont('helvetica', 'bold')
-  doc.text('PV-Analyse-Pro', margin, 40)
+  doc.text('SolarProof', margin, 40)
 
   doc.setFontSize(16)
   doc.setFont('helvetica', 'normal')
@@ -423,7 +423,7 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(150, 150, 150)
     doc.text(
-      `PV-Analyse-Pro v${__APP_VERSION__} (${__GIT_COMMIT__}) — Seite ${i}/${pageCount}`,
+      `SolarProof v${__APP_VERSION__} (${__GIT_COMMIT__}) — Seite ${i}/${pageCount}`,
       margin,
       pageH - 8
     )
