@@ -8,6 +8,30 @@ interface ChatMessage {
   at: string
 }
 
+/** Vector's signature avatar — dark visor with glowing orange eyes */
+function VectorAvatar({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const dims = { sm: 'h-6 w-6', md: 'h-9 w-9', lg: 'h-14 w-14' }
+  const visor = { sm: 'h-4 w-5', md: 'h-6 w-7', lg: 'h-8 w-9' }
+  const eye = { sm: 'h-1.5 w-1.5', md: 'h-2 w-2', lg: 'h-2.5 w-2.5' }
+  const gap = { sm: 'gap-1', md: 'gap-1.5', lg: 'gap-1.5' }
+  const glow = {
+    sm: '0 0 3px rgba(232,99,10,0.6)',
+    md: '0 0 4px rgba(232,99,10,0.6)',
+    lg: '0 0 6px rgba(232,99,10,0.8)',
+  }
+
+  return (
+    <div className={`flex ${dims[size]} items-center justify-center rounded-full bg-gradient-to-b from-gray-600 to-gray-800 border border-white/10 shadow-xl shadow-black/30 shrink-0`}>
+      <div className={`flex ${visor[size]} items-center justify-center rounded-lg bg-black/60`}>
+        <div className={`flex ${gap[size]}`}>
+          <div className={`${eye[size]} rounded-full bg-amber-500`} style={{ boxShadow: glow[size] }} />
+          <div className={`${eye[size]} rounded-full bg-amber-500`} style={{ boxShadow: glow[size] }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function VectorChat() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -74,16 +98,14 @@ export function VectorChat() {
 
   return (
     <>
-      {/* Chat toggle — positioned left of feedback button */}
+      {/* Chat toggle button — Vector avatar */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-[4.5rem] z-40 bg-amber-500 hover:bg-amber-600 text-white rounded-full p-3 shadow-lg transition-colors"
+          className="fixed bottom-6 right-[4.5rem] z-40 hover:scale-110 transition-transform"
           aria-label="Chat mit Vector starten"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-          </svg>
+          <VectorAvatar size="lg" />
         </button>
       )}
 
@@ -91,17 +113,15 @@ export function VectorChat() {
       {open && (
         <div className="fixed bottom-6 right-6 z-50 w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden" style={{ height: '480px' }}>
           {/* Header */}
-          <div className="bg-amber-500 text-white px-4 py-3 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-              </svg>
+          <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <VectorAvatar size="md" />
               <div>
                 <p className="text-sm font-semibold">Vector</p>
-                <p className="text-xs text-amber-100">SolarProof Assistent</p>
+                <p className="text-xs text-gray-400">SolarProof Assistent</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="p-1 hover:bg-amber-600 rounded" aria-label="Chat schließen">
+            <button onClick={() => setOpen(false)} className="p-1 hover:bg-white/10 rounded" aria-label="Chat schließen">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -112,6 +132,9 @@ export function VectorChat() {
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {messages.length === 0 && (
               <div className="text-center py-8">
+                <div className="flex justify-center mb-3">
+                  <VectorAvatar size="lg" />
+                </div>
                 <p className="text-sm text-gray-500">
                   Frag mich zu SolarProof — CSV-Import, Simulation, PDF-Export oder was du sonst wissen willst.
                 </p>
@@ -119,7 +142,8 @@ export function VectorChat() {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start gap-2'}`}>
+                {msg.role === 'vector' && <VectorAvatar size="sm" />}
                 <div
                   className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
                     msg.role === 'user'
@@ -133,7 +157,8 @@ export function VectorChat() {
             ))}
 
             {loading && (
-              <div className="flex justify-start">
+              <div className="flex justify-start gap-2">
+                <VectorAvatar size="sm" />
                 <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-2.5">
                   <div className="flex gap-1">
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
