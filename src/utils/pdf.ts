@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { DataGap, DayData, DaySimulation, FileMetadata, OverlapSummary, SimulationParams } from '../types'
 import type { YearCostComparison } from '../types/cost'
+import type { StorageSavingsYear } from './cost'
 
 interface PdfExportOptions {
   month: string // YYYY-MM
@@ -13,6 +14,7 @@ interface PdfExportOptions {
   dataGaps: DataGap[]
   overlapSummaries: OverlapSummary[]
   costComparison?: YearCostComparison[]
+  storageSavings?: { perYear: StorageSavingsYear[]; totalEur: number }
   socChartImage?: string // base64 data URL
   evChartImage?: string  // base64 data URL
 }
@@ -38,8 +40,58 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`
 }
 
+/**
+ * Rendert eine Tabelle "Ersparnis durch Speicher" unter dem Kostenvergleich.
+ * Zeigt pro Jahr den eingesparten Netzbezug × Strompreis = EUR-Ersparnis.
+ */
+function renderStorageSavings(
+  doc: jsPDF,
+  savings: { perYear: StorageSavingsYear[]; totalEur: number },
+  startY: number,
+  margin: number,
+): number {
+  if (savings.perYear.length === 0) return startY
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(0, 0, 0)
+  doc.text('Ersparnis durch Speicher', margin, startY)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text(
+    `Eingesparter Netzbezug durch Speicher × BDEW-Strompreis = ${savings.totalEur >= 0 ? '+' : ''}${savings.totalEur.toFixed(2)} EUR gesamt.`,
+    margin, startY + 6,
+  )
+
+  autoTable(doc, {
+    startY: startY + 10,
+    margin: { left: margin, right: margin },
+    head: [['Jahr', 'Eingespart (kWh)', 'Strompreis (ct/kWh)', 'Ersparnis (EUR)']],
+    body: [
+      ...savings.perYear.map((r) => [
+        String(r.year),
+        r.kwh.toFixed(0),
+        r.ct_per_kwh.toFixed(1),
+        `${r.eur >= 0 ? '+' : ''}${r.eur.toFixed(2)}`,
+      ]),
+      [
+        'Gesamt',
+        savings.perYear.reduce((s, r) => s + r.kwh, 0).toFixed(0),
+        '—',
+        `${savings.totalEur >= 0 ? '+' : ''}${savings.totalEur.toFixed(2)}`,
+      ],
+    ],
+    styles: { fontSize: 8, font: 'helvetica', cellPadding: 2 },
+    headStyles: { fillColor: [34, 139, 34], textColor: 255, fontSize: 8 },
+    alternateRowStyles: { fillColor: [245, 250, 245] },
+  })
+
+  return (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? startY + 40
+}
+
 export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
-  const { month, anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries, socChartImage, evChartImage } = options
+  const { month, anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries, socChartImage, evChartImage, storageSavings } = options
 
   const [yearStr, monthStr] = month.split('-')
   const monthName = MONTHS[parseInt(monthStr) - 1]
@@ -481,6 +533,10 @@ export function generateMonthlyPdf(options: PdfExportOptions): ArrayBuffer {
       margin, afterCostTable + 9
     )
     doc.setTextColor(0, 0, 0)
+
+    if (storageSavings && storageSavings.perYear.length > 0) {
+      renderStorageSavings(doc, storageSavings, afterCostTable + 20, margin)
+    }
   }
 
   // ── Footer auf allen Seiten ──────────────────────────
@@ -522,10 +578,11 @@ interface FullPdfExportOptions {
   dataGaps: DataGap[]
   overlapSummaries: OverlapSummary[]
   costComparison?: YearCostComparison[]
+  storageSavings?: { perYear: StorageSavingsYear[]; totalEur: number }
 }
 
 export function generateFullPdf(options: FullPdfExportOptions): ArrayBuffer {
-  const { anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries } = options
+  const { anlagenname, days, simResults, params, fileMetadataList, dataGaps, overlapSummaries, storageSavings } = options
   const now = new Date()
 
   // Collect all months
@@ -811,6 +868,10 @@ export function generateFullPdf(options: FullPdfExportOptions): ArrayBuffer {
     doc.text('Strompreise: BDEW-Durchschnittspreise Haushaltsstrom (brutto). 2022/2023 mit Strompreisbremse.', margin, afterCostTable + 5)
     doc.text('Keine Investitionsanalyse. Zeigt nur ob Stromeinkauf günstiger gewesen wäre.', margin, afterCostTable + 9)
     doc.setTextColor(0, 0, 0)
+
+    if (storageSavings && storageSavings.perYear.length > 0) {
+      renderStorageSavings(doc, storageSavings, afterCostTable + 20, margin)
+    }
   }
 
   // ── Disclaimer ──────────────────────────────────────────

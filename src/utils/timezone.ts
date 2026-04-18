@@ -44,7 +44,8 @@ function detectTimeFormat(samples: string[]): string | null {
 /** Convert raw rows to MeasurementIntervals with UTC timestamps, grouped by day */
 export function processRawData(
   rows: RawDataRow[],
-  inputIsUTC: boolean = false
+  inputIsUTC: boolean = false,
+  isPower: boolean = false,
 ): { days: DayData[]; warnings: DstWarning[] } {
   if (rows.length === 0) return { days: [], warnings: [] }
 
@@ -157,9 +158,53 @@ export function processRawData(
   const days: DayData[] = []
   const sortedKeys = [...dayMap.keys()].sort()
 
+  // If input values are instantaneous power (kW), estimate a fallback interval
+  // duration from the median timestamp delta across ALL intervals (so that the
+  // last sample of each day and isolated days still get a sensible duration).
+  let fallbackDurationHours = 0
+  if (isPower) {
+    const allIntervals: MeasurementInterval[] = []
+    for (const k of sortedKeys) allIntervals.push(...dayMap.get(k)!)
+    allIntervals.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+    const deltas: number[] = []
+    for (let i = 1; i < allIntervals.length; i++) {
+      const d = (allIntervals[i].timestamp.getTime() - allIntervals[i - 1].timestamp.getTime()) / 3600000
+      // Ignore deltas > 1h (gaps) and <= 0 (duplicates) for fallback estimation
+      if (d > 0 && d <= 1) deltas.push(d)
+    }
+    if (deltas.length > 0) {
+      deltas.sort((a, b) => a - b)
+      fallbackDurationHours = deltas[Math.floor(deltas.length / 2)]
+    } else {
+      fallbackDurationHours = 5 / 60 // 5 min default (SENEC standard)
+    }
+  }
+
   for (const dayKey of sortedKeys) {
     const dayIntervals = dayMap.get(dayKey)!
     dayIntervals.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+    // Integrate power → energy: E_i = P_i × (t_{i+1} - t_i), capped at fallback
+    // for gaps > 2× fallback (so a midnight-to-next-morning gap doesn't inflate
+    // the last sample of the day).
+    if (isPower) {
+      const maxDuration = fallbackDurationHours * 2
+      for (let i = 0; i < dayIntervals.length; i++) {
+        const current = dayIntervals[i]
+        const next = dayIntervals[i + 1]
+        let durationHours: number
+        if (next) {
+          const d = (next.timestamp.getTime() - current.timestamp.getTime()) / 3600000
+          durationHours = (d > 0 && d <= maxDuration) ? d : fallbackDurationHours
+        } else {
+          durationHours = fallbackDurationHours
+        }
+        current.erzeugung_kwh *= durationHours
+        current.verbrauch_kwh *= durationHours
+        current.einspeisung_kwh *= durationHours
+        current.netzbezug_kwh *= durationHours
+      }
+    }
 
     days.push({
       date: dayKey,

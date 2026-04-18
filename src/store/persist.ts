@@ -4,7 +4,7 @@
  * Data never leaves the device.
  */
 
-import type { ColumnMapping, FileMetadata, SimulationParams } from '../types'
+import type { ColumnMapping, FileMetadata, InputUnit, SimulationParams } from '../types'
 import type { CostParams } from '../types/cost'
 
 const DB_NAME = 'solarproof'
@@ -18,6 +18,7 @@ export interface PersistedState {
   columnMapping: ColumnMapping
   inputIsUTC: boolean
   inputIsWh?: boolean
+  inputUnit?: InputUnit
   simulationParams: SimulationParams
   costParams: CostParams
   costCapOverrides: Record<number, boolean>

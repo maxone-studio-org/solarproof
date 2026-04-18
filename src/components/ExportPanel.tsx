@@ -3,7 +3,7 @@ import { useAppStore } from '../store'
 import { generateMonthlyPdf, generateFullPdf } from '../utils/pdf'
 import { requestTimestamp, computePdfHash } from '../utils/timestamp'
 import { renderMonthlySocChart, renderMonthlyEvChart } from '../utils/chartExport'
-import { calculateCostComparison } from '../utils/cost'
+import { calculateCostComparison, calculateStorageSavings, hasAnyCostInput } from '../utils/cost'
 
 type ExportState = 'idle' | 'generating' | 'timestamping' | 'done' | 'error'
 type ReportType = 'month' | 'full'
@@ -31,7 +31,7 @@ export function ExportPanel() {
   const tsrBlobRef = useRef<Blob | null>(null)
   const lastFileNameRef = useRef<string>('')
 
-  const hasCostData = costParams.kreditrate_eur_monat > 0 || costParams.nachzahlung_eur_jahr > 0
+  const hasCostData = hasAnyCostInput(costParams)
 
   const handleExport = useCallback(async () => {
     if (fileMetadataList.length === 0) return
@@ -57,6 +57,9 @@ export function ExportPanel() {
           costComparison: hasCostData
             ? calculateCostComparison(days, costParams, costCapOverrides)
             : undefined,
+          storageSavings: simulationResults.length > 0
+            ? calculateStorageSavings(days, simulationResults, costCapOverrides)
+            : undefined,
         })
         lastFileNameRef.current = 'pv-gesamtbericht'
       } else {
@@ -74,6 +77,9 @@ export function ExportPanel() {
           overlapSummaries,
           costComparison: hasCostData
             ? calculateCostComparison(days, costParams, costCapOverrides)
+            : undefined,
+          storageSavings: simulationResults.length > 0
+            ? calculateStorageSavings(days, simulationResults, costCapOverrides)
             : undefined,
           socChartImage,
           evChartImage,

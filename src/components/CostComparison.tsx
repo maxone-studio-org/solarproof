@@ -287,7 +287,9 @@ export function CostComparison() {
               <p className="text-sm text-gray-800 leading-relaxed">
                 Für deine Gesamtkosten von <span className="font-semibold">{totals.gesamtkosten.toFixed(0)} EUR</span> hättest
                 du <span className="font-semibold">{totals.aequivalent.toFixed(0)} kWh</span> Strom aus dem Netz kaufen können.
-                Du hast <span className="font-semibold">{totals.eigenverbrauch.toFixed(0)} kWh</span> selbst erzeugt und genutzt.
+                Dein <span className="font-semibold">Eigenverbrauch</span> aus der PV-Anlage
+                war <span className="font-semibold">{totals.eigenverbrauch.toFixed(0)} kWh</span>
+                <span className="text-xs text-gray-500"> (d.h. PV-Strom, den du direkt im Haus verbraucht hast — nicht die Gesamterzeugung)</span>.
               </p>
               <p className={`text-xs font-medium mt-2 ${totals.differenz >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                 {totals.differenz >= 0
@@ -307,8 +309,8 @@ export function CostComparison() {
                     <th className="px-2 py-1.5 text-left font-medium text-gray-600">Jahr</th>
                     <th className="px-2 py-1.5 text-right font-medium text-gray-600">Kosten <span className="text-gray-400 font-normal">EUR</span></th>
                     <th className="px-2 py-1.5 text-right font-medium text-gray-600">Strompreis <span className="text-gray-400 font-normal">ct/kWh</span></th>
-                    <th className="px-2 py-1.5 text-right font-medium text-gray-600">Kaufbar <span className="text-gray-400 font-normal">kWh</span></th>
-                    <th className="px-2 py-1.5 text-right font-medium text-gray-600">Genutzt <span className="text-gray-400 font-normal">kWh</span></th>
+                    <th className="px-2 py-1.5 text-right font-medium text-gray-600" title="Wie viel Strom du für deine Gesamtkosten hättest kaufen können (Kosten / Strompreis)">Kaufbar <span className="text-gray-400 font-normal">kWh</span></th>
+                    <th className="px-2 py-1.5 text-right font-medium text-gray-600" title="PV-Strom, den du direkt im Haus genutzt hast (Eigenverbrauch, nicht Gesamterzeugung)">Eigenverbr. <span className="text-gray-400 font-normal">kWh</span></th>
                     <th className="px-2 py-1.5 text-right font-medium text-gray-600">Differenz</th>
                   </tr>
                 </thead>

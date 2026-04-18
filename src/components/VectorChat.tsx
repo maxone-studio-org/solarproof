@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 
-const VECTOR_URL = 'https://agent.maxone.studio/chat'
-const SUPABASE_URL = 'https://panel.maxone.studio'
+const VECTOR_URL = 'https://agent.maxone.one/chat'
+const SUPABASE_URL = 'https://panel.maxone.one'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3Mjk3MjgwMDAsICJleHAiOiAxODg3NDk0NDAwfQ.bkbevdi1DwbqCos2hMTd3UnYAj5PogIBTqjZdOyTGiQ'
 
 interface ChatMessage {

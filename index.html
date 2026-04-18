@@ -9,5 +9,18 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- VECTOR Chat Widget (universal, zentral gehosted) -->
+    <vector-chat
+      instance="solarproof"
+      accent-color="#f59e0b"
+      greeting="Frag mich zu SolarProof — CSV-Import, Simulation, PDF-Export oder was du sonst wissen willst."
+      button-text="Fragen? Chat mit Vector"
+      feedback-table="solarproof_feedback"
+      supabase-url="https://panel.maxone.one"
+      supabase-key="eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3Mjk3MjgwMDAsICJleHAiOiAxODg3NDk0NDAwfQ.bkbevdi1DwbqCos2hMTd3UnYAj5PogIBTqjZdOyTGiQ"
+      hint-delay="0"
+    ></vector-chat>
+    <script src="https://agent.maxone.one/widget/vector-chat.js" defer></script>
   </body>
 </html>

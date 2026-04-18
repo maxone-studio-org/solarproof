@@ -10,7 +10,8 @@ import type {
   SimulationParams,
 } from '../types'
 import type { CostParams } from '../types/cost'
-import { autoDetectMapping, parseCSVPreview, parseCSVWithMapping, validateMapping, detectWhUnit, detectImplausibleValues } from '../utils/csv'
+import { autoDetectMapping, parseCSVPreview, parseCSVWithMapping, validateMapping, detectInputUnit, detectImplausibleValues } from '../utils/csv'
+import type { InputUnit } from '../types'
 import { processRawData } from '../utils/timezone'
 import { runSimulation } from '../utils/simulation'
 import { computeSHA256 } from '../utils/hash'
@@ -33,6 +34,43 @@ function mergeCSVTexts(texts: string[]): string {
 }
 
 export type ImportStep = 'idle' | 'mapping' | 'processing' | 'done'
+
+/**
+ * Re-parse all CSV data with the current inputUnit / inputIsUTC settings
+ * and re-run the full pipeline (parse → processRawData → dedup → simulate).
+ * Used by setInputIsUTC, setInputIsWh, setInputUnit when the user toggles.
+ */
+function reparseAndRerun(
+  getState: () => AppState,
+  setState: (partial: Partial<AppState>) => void,
+): void {
+  const { csvTexts, columnMapping, inputIsUTC, inputUnit, simulationParams, importStep } = getState()
+  if (importStep !== 'done' || csvTexts.length === 0) return
+
+  const isPower = inputUnit === 'kW' || inputUnit === 'W'
+  const allRows: import('../types').RawDataRow[] = []
+  for (let fileIdx = 0; fileIdx < csvTexts.length; fileIdx++) {
+    const { rows } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping, inputUnit)
+    for (const row of rows) row.sourceFileIndex = fileIdx
+    allRows.push(...rows)
+  }
+
+  const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC, isPower)
+  const { days, overlapSummaries } = deduplicateIntervals(rawDays)
+  const dataGaps = detectDataGaps(days)
+  const firstMonth = days.length > 0 ? days[0].date.substring(0, 7) : null
+  const simulationResults = runSimulation(days, simulationParams)
+
+  setState({
+    days,
+    dstWarnings: warnings,
+    dataGaps,
+    overlapSummaries,
+    selectedMonth: firstMonth,
+    simulationResults,
+  })
+  persistCurrentState(getState())
+}
 
 interface AppState {
   // CSV / Import
@@ -67,8 +105,10 @@ interface AppState {
   selectedMonth: string | null // YYYY-MM
   selectedDay: string | null // YYYY-MM-DD
   inputIsUTC: boolean
-  inputIsWh: boolean // true if CSV values are in Wh instead of kWh
-  whAutoDetected: boolean // true if Wh was auto-detected (for info display)
+  inputIsWh: boolean // true if CSV values are in Wh instead of kWh (legacy, derived from inputUnit)
+  inputUnit: InputUnit // 'kWh' | 'Wh' | 'kW' | 'W' — authoritative source of truth
+  unitAutoDetected: boolean // true if unit was auto-detected from headers (for info display)
+  whAutoDetected: boolean // legacy alias for unitAutoDetected
   showCredits: boolean
   rehydrating: boolean // true while restoring from IndexedDB
   persistError: string | null
@@ -90,6 +130,7 @@ interface AppState {
   setSelectedDay: (day: string | null) => void
   setInputIsUTC: (isUTC: boolean) => void
   setInputIsWh: (isWh: boolean) => void
+  setInputUnit: (unit: InputUnit) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -131,6 +172,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedDay: null,
   inputIsUTC: false,
   inputIsWh: false,
+  inputUnit: 'kWh' as InputUnit,
+  unitAutoDetected: false,
   whAutoDetected: false,
   showCredits: false,
   rehydrating: false,
@@ -163,21 +206,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       fileMetadataList,
       inputIsUTC: persisted.inputIsUTC,
       inputIsWh: persisted.inputIsWh ?? false,
+      inputUnit: (persisted as { inputUnit?: InputUnit }).inputUnit ?? (persisted.inputIsWh ? 'Wh' : 'kWh'),
       simulationParams: persisted.simulationParams,
       costParams: persisted.costParams,
       costCapOverrides: persisted.costCapOverrides,
     })
 
     // Re-process data (parse, deduplicate, simulate)
-    const { csvTexts, columnMapping, inputIsUTC, inputIsWh, simulationParams } = get()
+    const { csvTexts, columnMapping, inputIsUTC, inputUnit, simulationParams } = get()
+    const isPower = inputUnit === 'kW' || inputUnit === 'W'
     const allRows: import('../types').RawDataRow[] = []
     for (let fileIdx = 0; fileIdx < csvTexts.length; fileIdx++) {
-      const { rows } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping, inputIsWh)
+      const { rows } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping, inputUnit)
       for (const row of rows) row.sourceFileIndex = fileIdx
       allRows.push(...rows)
     }
 
-    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC)
+    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC, isPower)
     const { days, overlapSummaries } = deduplicateIntervals(rawDays)
     const dataGaps = detectDataGaps(days)
     const firstMonth = days.length > 0 ? days[0].date.substring(0, 7) : null
@@ -256,12 +301,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    // Auto-detect Wh from column headers
-    const whFromHeaders = detectWhUnit(mapping)
-    // Also do a quick parse to check value magnitude
-    const quickParse = parseCSVWithMapping(mergedText, mapping, false)
-    const whFromValues = detectImplausibleValues(quickParse.rows)
-    const isWh = whFromHeaders || whFromValues
+    // Auto-detect unit from column headers: kWh / Wh / kW / W
+    const unitFromHeaders = detectInputUnit(mapping)
+    // Quick parse (as kWh / no conversion) to check value magnitude for Wh fallback
+    const quickParse = parseCSVWithMapping(mergedText, mapping, 'kWh')
+    const implausibleWh = detectImplausibleValues(quickParse.rows)
+    // If header is ambiguous (default kWh) but values are huge, fall back to Wh
+    const detectedUnit: InputUnit =
+      unitFromHeaders !== 'kWh' ? unitFromHeaders :
+      implausibleWh ? 'Wh' : 'kWh'
+    const isPowerDetected = detectedUnit === 'kW' || detectedUnit === 'W'
+    const unitWasAutoDetected = detectedUnit !== 'kWh' || isPowerDetected
 
     set({
       csvTexts: fileResults.map((r) => r.text),
@@ -273,8 +323,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       fileMetadataList: metadataList,
       pendingFiles: null,
       duplicateInfo: null,
-      inputIsWh: isWh,
-      whAutoDetected: isWh,
+      inputUnit: detectedUnit,
+      inputIsWh: detectedUnit === 'Wh',
+      unitAutoDetected: unitWasAutoDetected,
+      whAutoDetected: unitWasAutoDetected,
       days: [],
       importErrors: [],
       dstWarnings: [],
@@ -354,7 +406,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   confirmMapping: async () => {
-    const { csvTexts, columnMapping, inputIsUTC, inputIsWh, simulationParams } = get()
+    const { csvTexts, columnMapping, inputIsUTC, inputUnit, simulationParams } = get()
     if (csvTexts.length === 0) return
 
     const errors = validateMapping(columnMapping)
@@ -367,12 +419,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ importStep: 'processing' })
     await yieldToUI()
 
+    const isPower = inputUnit === 'kW' || inputUnit === 'W'
+
     // Parse each file separately to tag with sourceFileIndex
     const allRows: import('../types').RawDataRow[] = []
     const allParseErrors: { line: number; message: string }[] = []
 
     for (let fileIdx = 0; fileIdx < csvTexts.length; fileIdx++) {
-      const { rows, errors: parseErrors } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping, inputIsWh)
+      const { rows, errors: parseErrors } = parseCSVWithMapping(csvTexts[fileIdx], columnMapping, inputUnit)
       for (const row of rows) {
         row.sourceFileIndex = fileIdx
       }
@@ -383,7 +437,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       })))
     }
 
-    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC)
+    const { days: rawDays, warnings } = processRawData(allRows, inputIsUTC, isPower)
 
     // Deduplicate overlapping intervals (first file wins, detailed tracking)
     const { days, overlapSummaries } = deduplicateIntervals(rawDays)
@@ -448,8 +502,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedMonth: (month) => set({ selectedMonth: month, selectedDay: null }),
   setSelectedDay: (day) => set({ selectedDay: day }),
-  setInputIsUTC: (isUTC) => set({ inputIsUTC: isUTC }),
-  setInputIsWh: (isWh) => set({ inputIsWh: isWh }),
+  setInputIsUTC: (isUTC) => {
+    set({ inputIsUTC: isUTC })
+    reparseAndRerun(get, set)
+  },
+  setInputIsWh: (isWh) => {
+    // Legacy setter — forward to setInputUnit with the equivalent InputUnit value
+    set({ inputIsWh: isWh, inputUnit: isWh ? 'Wh' : 'kWh' })
+    reparseAndRerun(get, set)
+  },
+  setInputUnit: (unit) => {
+    set({ inputUnit: unit, inputIsWh: unit === 'Wh' })
+    reparseAndRerun(get, set)
+  },
 
   setCostParam: (key, value) => {
     set((s) => ({ costParams: { ...s.costParams, [key]: value } }))
@@ -490,6 +555,7 @@ function persistCurrentState(s: AppState) {
     columnMapping: s.columnMapping,
     inputIsUTC: s.inputIsUTC,
     inputIsWh: s.inputIsWh,
+    inputUnit: s.inputUnit,
     simulationParams: s.simulationParams,
     costParams: s.costParams,
     costCapOverrides: s.costCapOverrides,

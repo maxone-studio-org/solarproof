@@ -1,5 +1,5 @@
 import Papa from 'papaparse'
-import type { ColumnMapping, RawDataRow, ManufacturerProfile } from '../types'
+import type { ColumnMapping, RawDataRow, ManufacturerProfile, InputUnit } from '../types'
 
 /** Known manufacturer synonyms for auto-mapping */
 export const MANUFACTURER_PROFILES: ManufacturerProfile[] = [
@@ -167,21 +167,33 @@ function parseNumber(value: string | undefined): number {
 }
 
 /**
- * Detect if mapped columns use Wh instead of kWh based on column header text.
- * Returns true if any energy column header contains "[Wh]" but NOT "[kWh]".
+ * Detect the unit of mapped energy columns based on header text.
+ * Priority order: kWh > Wh > kW > W > kWh (default).
+ *
+ * Rationale: headers like "Stromerzeugung [kW]" (SENEC) indicate instantaneous
+ * power samples which must be integrated over interval duration to yield energy.
+ * Headers like "Energie [kWh]" (Fronius) are already energy-per-interval.
  */
-export function detectWhUnit(mapping: ColumnMapping): boolean {
+export function detectInputUnit(mapping: ColumnMapping): InputUnit {
   const energyFields = ['erzeugung_kwh', 'verbrauch_kwh', 'einspeisung_kwh', 'netzbezug_kwh']
   for (const field of energyFields) {
     const header = mapping[field]
     if (!header) continue
     const lower = header.toLowerCase()
-    // Match "[wh]" or "(wh)" but not "[kwh]" or "(kwh)"
-    if (/[\[(]wh[\])]/.test(lower) && !/[\[(]kwh[\])]/.test(lower)) {
-      return true
-    }
+    if (/[\[(]kwh[\])]/.test(lower)) return 'kWh'
+    if (/[\[(]wh[\])]/.test(lower)) return 'Wh'
+    if (/[\[(]kw[\])]/.test(lower)) return 'kW'
+    if (/[\[(]w[\])]/.test(lower)) return 'W'
   }
-  return false
+  return 'kWh'
+}
+
+/**
+ * Legacy helper — kept for backwards compatibility.
+ * @deprecated Use detectInputUnit() instead.
+ */
+export function detectWhUnit(mapping: ColumnMapping): boolean {
+  return detectInputUnit(mapping) === 'Wh'
 }
 
 /**
@@ -197,13 +209,22 @@ export function detectImplausibleValues(rows: { erzeugung_kwh: number }[]): bool
   return median > 50 // 50 kWh per interval is impossible for residential
 }
 
-/** Parse full CSV with confirmed mapping and return RawDataRow[] */
+/** Parse full CSV with confirmed mapping and return RawDataRow[].
+ *
+ * For energy units (kWh, Wh): values are converted to kWh and treated as
+ * energy-per-interval (sum aggregation in processRawData).
+ *
+ * For power units (kW, W): values are converted to kW. The actual integration
+ * over interval duration happens in processRawData (which has access to
+ * consecutive timestamps per day).
+ */
 export function parseCSVWithMapping(
   text: string,
   mapping: ColumnMapping,
-  inputIsWh: boolean = false,
+  inputUnit: InputUnit = 'kWh',
 ): { rows: RawDataRow[]; errors: { line: number; message: string }[] } {
-  const factor = inputIsWh ? 0.001 : 1 // Wh → kWh
+  // Convert to canonical base unit: kWh→kWh, Wh→kWh, kW→kW, W→kW
+  const factor = (inputUnit === 'Wh' || inputUnit === 'W') ? 0.001 : 1
   const result = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,

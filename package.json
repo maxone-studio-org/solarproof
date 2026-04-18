@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npm run test:build && node test/smoke.mjs && node test/units.mjs && node test/cost.test.mjs && node test/simulation.test.mjs && node test/gapDetection.test.mjs && node test/extremes.test.mjs && node test/dst.test.mjs && node test/csv.test.mjs && node test/annual.test.mjs",
+    "test:smoke": "node test/smoke.mjs",
+    "test:units": "npm run test:build && node test/units.mjs && node test/cost.test.mjs && node test/simulation.test.mjs && node test/gapDetection.test.mjs && node test/extremes.test.mjs && node test/dst.test.mjs && node test/csv.test.mjs && node test/annual.test.mjs",
+    "test:build": "npx esbuild src/utils/cost.ts src/utils/simulation.ts src/utils/timezone.ts src/utils/csv.ts src/utils/gapDetection.ts --bundle --format=esm --platform=node --outdir=.test-build --out-extension:.js=.mjs"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

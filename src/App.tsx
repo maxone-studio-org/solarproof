@@ -15,7 +15,7 @@ import { DuplicateDialog } from './components/DuplicateDialog'
 import { CreditsOverlay } from './components/CreditsOverlay'
 import { CostComparison } from './components/CostComparison'
 import { AllMonthsOverview } from './components/AllMonthsOverview'
-import { VectorChat } from './components/VectorChat'
+import { DataIntegrityPanel } from './components/DataIntegrityPanel'
 import { useAppStore } from './store'
 
 function App() {
@@ -76,6 +76,7 @@ function App() {
         <div className="px-6 py-4 space-y-4">
           <ImportWarnings />
           <GapWarnings />
+          <DataIntegrityPanel />
 
           <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] lg:grid-cols-[280px_1fr] gap-4">
             {/* Sidebar */}
@@ -100,8 +101,7 @@ function App() {
       <LandingOverlay open={landingOpen} onClose={() => setLandingOpen(false)} />
       <CreditsOverlay open={creditsOpen} onClose={() => setCreditsOpen(false)} />
 
-      {/* Chat & Feedback (integrated) */}
-      <VectorChat />
+      {/* Chat & Feedback — now handled by <vector-chat> Web Component in index.html */}
 
       {/* Duplicate detection dialog */}
       {duplicateInfo && (

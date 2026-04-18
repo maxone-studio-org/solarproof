@@ -95,3 +95,65 @@ export function calculateCostComparison(
 
   return results
 }
+
+/**
+ * True if the user entered any cost input — flat or per-year/per-month override.
+ * Used to gate the PDF cost section: per-year-only entries must also count,
+ * sonst scheint es so als würde die Pro-Jahr-Nachzahlung nicht gespeichert.
+ */
+export function hasAnyCostInput(params: CostParams): boolean {
+  if (params.kreditrate_eur_monat > 0) return true
+  if (params.nachzahlung_eur_jahr > 0) return true
+  if (params.rueckerstattung_eur_jahr > 0) return true
+  if (params.wartung_eur_jahr > 0) return true
+  if (params.cloud_eur_monat > 0) return true
+  const perYear = params.nachzahlung_pro_jahr
+  if (perYear && Object.values(perYear).some((v) => v > 0)) return true
+  const perMonth = params.cloud_pro_monat
+  if (perMonth && Object.values(perMonth).some((v) => v > 0)) return true
+  return false
+}
+
+/**
+ * Euro-Ersparnis durch den simulierten Speicher pro Jahr.
+ * kWh = netzbezug_ist - netzbezug_sim (eingesparter Netzbezug)
+ * EUR = kWh × BDEW-Strompreis des jeweiligen Jahres (mit Cap-Override)
+ */
+export interface StorageSavingsYear {
+  year: number
+  kwh: number
+  ct_per_kwh: number
+  eur: number
+}
+
+export function calculateStorageSavings(
+  days: DayData[],
+  simResults: Array<{ date: string; totals: { netzbezug_sim_kwh: number } }>,
+  capOverrides: Record<number, boolean>,
+): { perYear: StorageSavingsYear[]; totalEur: number } {
+  const yearMap = new Map<number, { netzbezug: number; netzbezugSim: number }>()
+  for (const day of days) {
+    const year = parseInt(day.date.substring(0, 4))
+    if (!yearMap.has(year)) yearMap.set(year, { netzbezug: 0, netzbezugSim: 0 })
+    yearMap.get(year)!.netzbezug += day.totals.netzbezug_kwh
+  }
+  for (const sim of simResults) {
+    const year = parseInt(sim.date.substring(0, 4))
+    const entry = yearMap.get(year)
+    if (entry) entry.netzbezugSim += sim.totals.netzbezug_sim_kwh
+  }
+
+  const perYear: StorageSavingsYear[] = []
+  let totalEur = 0
+  for (const [year, data] of [...yearMap.entries()].sort((a, b) => a[0] - b[0])) {
+    const bdew = BDEW_PRICES.find((p) => p.year === year)
+    if (!bdew) continue
+    const capActive = capOverrides[year] ?? bdew.capped_default
+    const ct = getEffectivePrice(bdew, capActive)
+    const kwh = data.netzbezug - data.netzbezugSim
+    const eur = (kwh * ct) / 100
+    totalEur += eur
+    perYear.push({ year, kwh, ct_per_kwh: ct, eur })
+  }
+  return { perYear, totalEur }
+}

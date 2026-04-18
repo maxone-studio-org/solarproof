@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAppStore } from '../store'
 import { INTERNAL_FIELDS } from '../utils/csv'
+import type { InputUnit } from '../types'
 
 const FIELD_LABELS: Record<string, string> = {
   datum: 'Datum / Zeitstempel',
@@ -20,12 +21,12 @@ export function ColumnMapping() {
   const columnMapping = useAppStore((s) => s.columnMapping)
   const importErrors = useAppStore((s) => s.importErrors)
   const inputIsUTC = useAppStore((s) => s.inputIsUTC)
-  const inputIsWh = useAppStore((s) => s.inputIsWh)
-  const whAutoDetected = useAppStore((s) => s.whAutoDetected)
+  const inputUnit = useAppStore((s) => s.inputUnit)
+  const unitAutoDetected = useAppStore((s) => s.unitAutoDetected)
   const setMapping = useAppStore((s) => s.setMapping)
   const confirmMapping = useAppStore((s) => s.confirmMapping)
   const setInputIsUTC = useAppStore((s) => s.setInputIsUTC)
-  const setInputIsWh = useAppStore((s) => s.setInputIsWh)
+  const setInputUnit = useAppStore((s) => s.setInputUnit)
   const [manualMode, setManualMode] = useState(false)
 
   if (importStep === 'processing') {
@@ -117,23 +118,33 @@ export function ColumnMapping() {
               Falsch erkannt? Manuell anpassen &rarr;
             </button>
 
-            {/* Unit toggle (Wh vs kWh) */}
-            <div className={`flex items-center gap-3 mb-4 p-3 rounded-lg ${inputIsWh ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
-              <input
-                type="checkbox"
-                id="wh-toggle"
-                checked={inputIsWh}
-                onChange={(e) => setInputIsWh(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <label htmlFor="wh-toggle" className="text-sm text-gray-700">
-                Werte sind in Wh (Wattstunden)
-                <span className="block text-xs text-gray-500">
-                  {whAutoDetected
-                    ? 'Automatisch erkannt — Werte werden durch 1000 geteilt (Wh → kWh)'
-                    : 'Aktivieren wenn die Werte unrealistisch hoch erscheinen (z.B. >10.000 kWh/Monat)'}
-                </span>
+            {/* Unit selector (kWh / Wh / kW / W) */}
+            <div className={`mb-4 p-3 rounded-lg ${inputUnit !== 'kWh' ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
+              <label htmlFor="unit-select" className="block text-sm text-gray-700 mb-1.5">
+                Einheit der Werte in der CSV
               </label>
+              <select
+                id="unit-select"
+                value={inputUnit}
+                onChange={(e) => setInputUnit(e.target.value as InputUnit)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+              >
+                <option value="kWh">kWh — Energie pro Intervall (Standard)</option>
+                <option value="Wh">Wh — Wattstunden pro Intervall</option>
+                <option value="kW">kW — Momentan-Leistung (z.B. SENEC)</option>
+                <option value="W">W — Momentan-Leistung in Watt</option>
+              </select>
+              <span className="block text-xs text-gray-500 mt-1">
+                {unitAutoDetected
+                  ? `Automatisch erkannt: ${inputUnit}. ${
+                      inputUnit === 'kW' || inputUnit === 'W'
+                        ? 'Werte werden mit Intervalldauer multipliziert (Leistung → Energie).'
+                        : inputUnit === 'Wh'
+                        ? 'Werte werden durch 1000 geteilt (Wh → kWh).'
+                        : ''
+                    }`
+                  : 'Wähle kW wenn die CSV Momentan-Leistungen enthält (z.B. SENEC-Export).'}
+              </span>
             </div>
 
             {/* Timezone toggle */}
@@ -243,23 +254,27 @@ export function ColumnMapping() {
               })}
             </div>
 
-            {/* Unit toggle (Wh vs kWh) */}
-            <div className={`flex items-center gap-3 mb-6 p-3 rounded-lg ${inputIsWh ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
-              <input
-                type="checkbox"
-                id="wh-toggle-manual"
-                checked={inputIsWh}
-                onChange={(e) => setInputIsWh(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <label htmlFor="wh-toggle-manual" className="text-sm text-gray-700">
-                Werte sind in Wh (Wattstunden)
-                <span className="block text-xs text-gray-500">
-                  {whAutoDetected
-                    ? 'Automatisch erkannt — Werte werden durch 1000 geteilt (Wh → kWh)'
-                    : 'Aktivieren wenn die Werte unrealistisch hoch erscheinen'}
-                </span>
+            {/* Unit selector (kWh / Wh / kW / W) */}
+            <div className={`mb-6 p-3 rounded-lg ${inputUnit !== 'kWh' ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
+              <label htmlFor="unit-select-manual" className="block text-sm text-gray-700 mb-1.5">
+                Einheit der Werte in der CSV
               </label>
+              <select
+                id="unit-select-manual"
+                value={inputUnit}
+                onChange={(e) => setInputUnit(e.target.value as InputUnit)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+              >
+                <option value="kWh">kWh — Energie pro Intervall (Standard)</option>
+                <option value="Wh">Wh — Wattstunden pro Intervall</option>
+                <option value="kW">kW — Momentan-Leistung (z.B. SENEC)</option>
+                <option value="W">W — Momentan-Leistung in Watt</option>
+              </select>
+              <span className="block text-xs text-gray-500 mt-1">
+                {unitAutoDetected
+                  ? `Automatisch erkannt: ${inputUnit}.`
+                  : 'Wähle kW wenn die CSV Momentan-Leistungen enthält.'}
+              </span>
             </div>
 
             {/* Timezone toggle */}

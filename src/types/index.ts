@@ -9,6 +9,13 @@ export interface RawDataRow {
   sourceFileIndex: number
 }
 
+/**
+ * Unit of the numeric values in the input CSV.
+ * - 'kWh' / 'Wh': energy per interval (sum aggregation)
+ * - 'kW' / 'W': instantaneous power (integration over interval duration required)
+ */
+export type InputUnit = 'kWh' | 'Wh' | 'kW' | 'W'
+
 /** Single measurement interval with UTC timestamp */
 export interface MeasurementInterval {
   timestamp: Date // UTC
