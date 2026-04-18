@@ -12,7 +12,7 @@ const gitCommitHash = (() => {
 })()
 
 export default defineConfig({
-  base: process.env.GITHUB_PAGES === '1' ? '/pv-analyse-pro/' : '/',
+  base: process.env.GITHUB_PAGES === '1' ? '/solarproof/' : '/',
   plugins: [react(), tailwindcss()],
   define: {
     __GIT_COMMIT__: JSON.stringify(gitCommitHash),
