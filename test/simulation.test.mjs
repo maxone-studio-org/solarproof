@@ -248,6 +248,32 @@ function testSocMinMaxTracking() {
   assertEq('socmin-tracking', r.totals.soc_min_kwh, 2)
 }
 
+// ── 13. Teilweise funktionierender Speicher (Robert-Szenario 14.02.2022) ──
+// Szenario: Echter Speicher nahm partiell noch Energie auf → nur die ins Netz
+// eingespeiste Differenz darf als "hätte in hypothetischen Speicher gehen können"
+// gezählt werden. Energie, die schon im echten (defekten) Speicher gelandet ist,
+// taucht nicht als einspeisung_kwh auf und darf NICHT doppelt als Einsparung zählen.
+function testPartiallyFunctioningRealBattery() {
+  // Erzeugung 10, Verbrauch 3, Real-Speicher nahm 2 kWh, ins Netz 5, vom Netz 0.
+  // CSV-Zeile: erzeugung=10, verbrauch=3, einspeisung=5, netzbezug=0
+  // (erzeugung ≠ verbrauch + einspeisung, weil 2 kWh in den echten Speicher gingen)
+  const params = { ...defaultParams, kapazitaet_kwh: 10, anfangs_soc_pct: 0 }
+  const days = [makeDay('2022-02-14', [
+    makeInterval('2022-02-14T12:00:00Z', 10, 3, 5, 0),
+  ])]
+  const r = runSimulation(days, params)[0]
+  // Hypothetischer voller Speicher lädt NUR die 5 kWh Einspeisung — nicht die 10 kWh Erzeugung.
+  assertEq('partial-battery-charges-only-einspeisung', r.totals.geladen_kwh, 5)
+  // Einspeisung-Sim 0, weil hypothetischer Speicher alle 5 kWh aufnehmen konnte.
+  assertEq('partial-battery-einspeisung-sim-zero', r.totals.einspeisung_sim_kwh, 0)
+  // Kein Netzbezug simuliert, weil auch im Original keiner war.
+  assertEq('partial-battery-netzbezug-sim-zero', r.totals.netzbezug_sim_kwh, 0)
+  // Invariante: geladen ≤ tatsächliche Einspeisung (keine Doppelzählung mit echter Batterie)
+  assertTrue('partial-battery-no-double-counting',
+    r.totals.geladen_kwh <= days[0].totals.einspeisung_kwh + 1e-9,
+    `geladen=${r.totals.geladen_kwh} > einspeisung_ist=${days[0].totals.einspeisung_kwh}`)
+}
+
 // ── Run + Report ──
 async function main() {
   console.log(`\n🧪 simulation.ts Characterization Tests  |  ${new Date().toISOString()}\n`)
@@ -264,6 +290,7 @@ async function main() {
   testSurplusMode()
   testNoSimultaneousChargeDischarge()
   testSocMinMaxTracking()
+  testPartiallyFunctioningRealBattery()
 
   const passed = results.filter((r) => r.ok).length
   const failed = results.filter((r) => !r.ok).length
